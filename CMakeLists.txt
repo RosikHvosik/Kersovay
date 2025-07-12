@@ -28,6 +28,8 @@ qt_add_executable(KYRSOVAYA
     avltree3.hpp
     PatientParser.h
     AppointmentParser.h
+    globals.cpp
+    globals.h
 
 
 

@@ -41,14 +41,18 @@ inline void parseAppointmentFile(const std::string& filename, Array<Appointment,
         ++lineCount;
         std::istringstream iss(line);
 
-        std::string policyRaw, diagnosis, doctor, dayStr, monthStr, yearStr;
+        std::string part1, part2, part3, part4;
+        std::string diagnosis, doctor, dayStr, monthStr, yearStr;
 
-        std::getline(iss, policyRaw, ',');
-        std::getline(iss, diagnosis, ',');
-        std::getline(iss, doctor, ',');
-        iss >> dayStr >> monthStr >> yearStr;
+        // Новый разбор полиса (4 слова)
+        if (!(iss >> part1 >> part2 >> part3 >> part4 >> diagnosis >> doctor >> dayStr >> monthStr >> yearStr)) {
+            qDebug().noquote() << QString("Ошибка чтения строки %1: %2")
+                                      .arg(lineCount)
+                                      .arg(QString::fromStdString(line));
+            continue;
+        }
 
-        std::string cleanPolicy = removeSpaces(policyRaw);
+        std::string cleanPolicy = part1 + part2 + part3 + part4;
 
         try {
             Date date = {std::stoi(dayStr), parseMonth(monthStr), std::stoi(yearStr)};
@@ -65,10 +69,14 @@ inline void parseAppointmentFile(const std::string& filename, Array<Appointment,
                                           .arg(QString::fromStdString(cleanPolicy));
             }
         } catch (...) {
-            qDebug().noquote() << QString("Ошибка парсинга строки %1: %2").arg(lineCount).arg(QString::fromStdString(line));
+            qDebug().noquote() << QString("Ошибка парсинга строки %1: %2")
+                                      .arg(lineCount)
+                                      .arg(QString::fromStdString(line));
         }
     }
 }
+
+
 
 
 #endif // APPOINTMENTPARSER_H

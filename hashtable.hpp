@@ -1,15 +1,14 @@
 #ifndef HASHTABLE_HPP
 #define HASHTABLE_HPP
 
-#include "array.h"
+#include "globals.h"
 #include <string>
 #include <cmath>
 #include <stdexcept>
 #include <QString>
 #include <QDebug>
 #include "types.h"
-
-
+#include<sstream>
 #define MAX_SIZE 1000
 #define DIGITS 4
 inline std::string uint128_to_string(__uint128_t value) {

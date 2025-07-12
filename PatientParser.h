@@ -46,15 +46,15 @@ bool parsePatientFile(const std::string& filename, Array<Patient, 1000>& patient
     while (std::getline(file, line)) {
         ++lineNumber;
         std::istringstream iss(line);
-        std::string policyRaw, surname, name, middlename, dayStr, monthStr, yearStr;
+        std::string part1, part2, part3, part4;
+        std::string surname, name, middlename, dayStr, monthStr, yearStr;
 
-        // Ожидаемый формат:
-        // 1234 5678 9012 3456, Иванов Иван Иванович, 12 фев 2003
-        if (!std::getline(iss, policyRaw, ',')) continue;
-        if (!std::getline(iss, surname, ' ')) continue;
-        if (!std::getline(iss, name, ' ')) continue;
-        if (!std::getline(iss, middlename, ',')) continue;
-        if (!(iss >> dayStr >> monthStr >> yearStr)) continue;
+        if (!(iss >> part1 >> part2 >> part3 >> part4 >> surname >> name >> middlename >> dayStr >> monthStr >> yearStr)) {
+            qDebug() << "Ошибка чтения строки" << lineNumber << ":" << QString::fromStdString(line);
+            continue;
+        }
+
+        std::string cleanPolicy = part1 + part2 + part3 + part4;
 
         try {
             Patient p;
@@ -67,13 +67,11 @@ bool parsePatientFile(const std::string& filename, Array<Patient, 1000>& patient
                 std::stoi(yearStr)
             };
 
-            std::string cleanPolicy = removeSpaces(trim(policyRaw));
             if (cleanPolicy.size() != 16) {
                 qDebug() << "Некорректный полис ОМС на строке" << lineNumber;
                 continue;
             }
 
-            // Вставка в массив
             if (!patientArray.Add(p)) {
                 qDebug() << "Массив пациентов переполнен!";
                 return false;
@@ -92,6 +90,7 @@ bool parsePatientFile(const std::string& filename, Array<Patient, 1000>& patient
 
     return true;
 }
+
 
 // Удаляет начальные/конечные пробелы
 std::string trim(const std::string& str) {

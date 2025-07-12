@@ -1,7 +1,8 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
+
 #include "hashtable.hpp"
-#include"array.h"
+#include "array.h"
 #include "avltree3.hpp"
 #include <QMainWindow>
 #include <QToolBar>
@@ -12,6 +13,8 @@
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QFile>
+#include <QFileDialog>
+#include <QMessageBox>
 #include "types.h"
 
 QT_BEGIN_NAMESPACE
@@ -20,6 +23,12 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
+// Объявляем глобальные массивы как extern
+extern Array<Patient, 1000> PatientArray;
+extern Array<Appointment, 1000> AppointmentArray;
+
+Month monthFromShortString(const QString& shortMonth);
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -27,26 +36,29 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+private slots:
+    void loadPatientsFromFile();
+    void loadAppointmentsFromFile();
+    void addPatient();
+    void addAppointment();
+    void deletePatient();
+    void deleteAppointment();
+    void generateReport();
+    void showDebugWindow();
+    void updateAllTables();
+
 private:
-
-    void loadPatientsFromFile(const QString& filename);
-    void loadAppointmentsFromFile(const QString& filename);
-    Month monthFromShortString(const QString& shortMonth);
-
-    HashTable hashTable;
-    AVLTree<std::string, Appointment, Array<Appointment, 1000>> avlTree;
-    QTableWidget* hashTableView;
-    QGraphicsView* treeGraphicsView;
-    QGraphicsScene* treeScene;
     Ui::MainWindow *ui;
-    QTextEdit *treeVisualization;
-    QTextEdit *hashTableVisualization;
-    QTableWidget *appointmentTable;
+
+    // UI компоненты
     QToolBar *toolBar;
     QTabWidget *tabWidget;
     QTableWidget *patientTable;
-    QTextEdit *treeView;
+    QTableWidget *appointmentTable;
     QTableWidget *reportTable;
+    QTableWidget *hashTableView;
+    QGraphicsView *treeGraphicsView;
+    QGraphicsScene *treeScene;
 
     // Actions
     QAction *loadPatientsAction;
@@ -57,16 +69,24 @@ private:
     QAction *deleteAppointmentAction;
     QAction *debugAction;
     QAction *reportAction;
-    //мб обратно их в cpp файл
-    Array<Patient, 1000> patientArray;
-    Array<Appointment, 1000> appointmentArray;
 
+    // Структуры данных
+    HashTable hashTable;
+    AVLTree<std::string, Appointment, Array<Appointment, 1000>> avlTree;
+    std::vector<std::string> appointmentPolicies; // Для связи приёмов с полисами
+
+    // Вспомогательные методы
     void setupUI();
     void createToolBar();
     void createTabs();
-    void updateAppointmentTable(const std::vector<std::string>& policies);
-    void updatePatientTable();  // если ещё не было
+    void updatePatientTable();
+    void updateAppointmentTable();
+    void updateHashTableView();
+    void updateTreeView();
 
+    QString formatDate(const Date& date);
+    bool parsePatientLine(const QString& line, std::string& policy, Patient& patient);
+    bool parseAppointmentLine(const QString& line, std::string& policy, Appointment& appointment);
 };
 
 #endif // MAINWINDOW_H
