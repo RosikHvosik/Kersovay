@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 #include "hashtable.hpp"
 #include <QApplication>
-#include "avltree.hpp"
+#include "avltree3.hpp"
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);

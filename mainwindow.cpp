@@ -3,15 +3,14 @@
 #include "ui_mainwindow.h"
 #include <QTableWidget>
 #include <QDebug>
-
+#include <QHeaderView>
 #include "array.h"
-#include "hashtable.h"
 #include "hashtable.hpp"
 #include "avltree3.hpp"
-
-Array<Patient, 1000> PatientArray;
-Array<Appointment, 1000> AppointmentArray;
-
+#include <QFile>
+//Array<Patient, 1000> patientArray;
+//Array<Appointment, 1000> appointmentArray;
+//обнавление вкладки пациенты
 QString formatDate(const Date& date) {
     QStringList monthNames = {
         "", "янв", "фев", "мар", "апр", "май", "июн",
@@ -22,129 +21,133 @@ QString formatDate(const Date& date) {
         .arg(monthNames[static_cast<int>(date.month)])
         .arg(date.year);
 }
+void MainWindow::loadPatientsFromFile(const QString& filename) {
+    QFile file(filename);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qDebug() << "Не удалось открыть файл пациентов";
+        return;
+    }
+
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        if (line.isEmpty()) continue;
+
+        QStringList parts = line.split("|");
+        if (parts.size() != 3) continue;
+
+        QString policyStr = parts[0].trimmed();         // ключ
+        QString fioStr = parts[1].trimmed();            // Фамилия Имя Отчество
+        QStringList dateParts = parts[2].split(" ");    // дата рождения
+
+        if (dateParts.size() != 3) continue;
+
+        int day = dateParts[0].toInt();
+        Month month = monthFromShortString(dateParts[1]);
+        int year = dateParts[2].toInt();
+
+        try {
+            hashTable.insert(policyStr.toStdString(), fioStr.toStdString(), day, month, year);
+        } catch (const std::exception& e) {
+            qDebug() << "Ошибка вставки пациента:" << e.what();
+        }
+    }
+
+    file.close();
+    qDebug() << "Пациенты успешно загружены";
+}
+
+
+void MainWindow::loadAppointmentsFromFile(const QString& filename) {
+    QFile file(filename);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qDebug() << "Не удалось открыть файл приёмов";
+        return;
+    }
+
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        if (line.isEmpty()) continue;
+
+        QStringList parts = line.split("|");
+        if (parts.size() != 4) continue;
+
+        QString policyStr = parts[0].trimmed();         // ключ
+        QString diagnosis = parts[1].trimmed();
+        QString doctor = parts[2].trimmed();
+        QStringList dateParts = parts[3].split(" ");
+
+        if (dateParts.size() != 3) continue;
+
+        Appointment a;
+        a.diagnosis = diagnosis.toStdString();
+        a.doctorType = doctor.toStdString();
+        a.appointmentDate.day = dateParts[0].toInt();
+        a.appointmentDate.month = monthFromShortString(dateParts[1]);
+        a.appointmentDate.year = dateParts[2].toInt();
+
+        avlTree.insert(policyStr.toStdString(), a, appointmentArray);
+    }
+
+    file.close();
+    qDebug() << "Приёмы успешно загружены";
+}
+
+
+Month monthFromShortString(const QString& shortMonth) {
+    if (shortMonth == "янв") return Month::янв;
+    if (shortMonth == "фев") return Month::фев;
+    if (shortMonth == "мар") return Month::мар;
+    if (shortMonth == "апр") return Month::апр;
+    if (shortMonth == "май") return Month::май;
+    if (shortMonth == "июн") return Month::июн;
+    if (shortMonth == "июл") return Month::июл;
+    if (shortMonth == "авг") return Month::авг;
+    if (shortMonth == "сен") return Month::сен;
+    if (shortMonth == "окт") return Month::окт;
+    if (shortMonth == "ноя") return Month::ноя;
+    if (shortMonth == "дек") return Month::дек;
+    return Month::янв; // по умолчанию
+}
+
+
+
+void MainWindow::updateAppointmentTable(const std::vector<std::string>& policies) {
+    appointmentTable->setRowCount(0);
+
+    for (std::size_t i = 0; i < appointmentArray.Size(); ++i) {
+        const Appointment& app = appointmentArray[i];
+
+        QString policy = QString::fromStdString(policies[i]);
+        QString diagnosis = QString::fromStdString(app.diagnosis);
+        QString doctor = QString::fromStdString(app.doctorType);
+        QString date = formatDate(app.appointmentDate);
+
+        int row = appointmentTable->rowCount();
+        appointmentTable->insertRow(row);
+        appointmentTable->setItem(row, 0, new QTableWidgetItem(policy));
+        appointmentTable->setItem(row, 1, new QTableWidgetItem(diagnosis));
+        appointmentTable->setItem(row, 2, new QTableWidgetItem(doctor));
+        appointmentTable->setItem(row, 3, new QTableWidgetItem(date));
+    }
+}
+
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    setupUI();
 
-    // === ТЕСТИРОВАНИЕ AVLTree ===
-    /*AVLTree<std::string, Appointment, Array<Appointment, 1000>> tree;
+    connect(loadPatientsAction, &QAction::triggered, this, [this]() {
+        loadPatientsFromFile("patients.txt");
+    });
 
-    // Примерные записи
-    Date d1{10, Month::янв, 2024};
-    Date d2{12, Month::фев, 2024};
-    Date d3{15, Month::мар, 2024};
-
-    Appointment a1 = {"Терапевт", "Грипп", d1};
-    Appointment a2 = {"Терапевт", "ОРВИ", d2};
-    Appointment a3 = {"Педиатр", "Кашель", d3};
-
-    tree.insert("1234567890123456", a1, AppointmentArray);
-    tree.insert("1234567890123456", a2, AppointmentArray);
-    tree.insert("6543210987654321", a3, AppointmentArray);
-
-    qDebug() << "\n=== ОБХОД ДЕРЕВА ===";
-    tree.traverse([](const Appointment& a, const std::string& key) {
-        qDebug().noquote() << QString("Полис: %1 | Врач: %2 | Диагноз: %3 | Дата: %4")
-                                  .arg(QString::fromStdString(key))
-                                  .arg(QString::fromStdString(a.doctorType))
-                                  .arg(QString::fromStdString(a.diagnosis))
-                                  .arg(formatDate(a.appointmentDate));
-    }, AppointmentArray);
-
-    qDebug() << "\n=== УДАЛЕНИЕ ПРИЁМА ===";
-    tree.remove("1234567890123456", a1, AppointmentArray);
-
-    qDebug() << "\n=== ОБХОД ПОСЛЕ УДАЛЕНИЯ ===";
-    tree.traverse([](const Appointment& a, const std::string& key) {
-        qDebug().noquote() << QString("Полис: %1 | Врач: %2 | Диагноз: %3 | Дата: %4")
-                                  .arg(QString::fromStdString(key))
-                                  .arg(QString::fromStdString(a.doctorType))
-                                  .arg(QString::fromStdString(a.diagnosis))
-                                  .arg(formatDate(a.appointmentDate));
-    }, AppointmentArray);
-
-    qDebug() << "\n=== ОЧИСТКА ДЕРЕВА ===";
-    tree.clear();
-*/
-    // === ТЕСТИРОВАНИЕ HashTable ===
-    qDebug().noquote() << "\n=== ТЕСТ ХЕШ-ТАБЛИЦЫ ===";
-
-    HashTable table;
-
-    // 9 уникальных записей
-    std::vector<std::pair<std::string, std::string>> entries = {
-        {"0000000000999991", "Иванов Иван Иванович"},
-        {"0000000000999910", "Петров Петр Петрович"},
-        {"0000000000111123", "Сидоров Сидор Сидорович"},
-        {"0000000000222222", "Козлов Николай Николаевич"},
-        {"0000000000333333", "Орлов Андрей Александрович"},
-        {"0000000000444444", "Зайцев Юрий Юрьевич"},
-        {"0000000000555555", "Фёдоров Виталий Викторович"},
-        {"0000000000666666", "Михайлов Владимир Владимирович"},
-        {"0000000000777777", "Смирнов Алексей Алексеевич"}
-    };
-
-    // Вставка всех записей
-    int i = 0;
-    for (const auto& [oms, fio] : entries) {
-        std::istringstream in(fio);
-        std::string surname, name, middlename;
-        in >> surname >> name >> middlename;
-
-        table.insert(oms, fio, 1 + i, static_cast<Month>((i % 12) + 1), 1980 + i);
-        ++i;
-    }
-    // Коллизия: тот же хеш, что у 999910
-    std::string omsCollision = "0000000000010000";
-    std::string nameCollision = "Клишин Константин Константинович";
-
-    table.insert(omsCollision, nameCollision, 9, Month::сен, 1999);
-    qDebug().noquote() << "\n=== ПОИСК КОЛЛИЗИИ ДО УДАЛЕНИЯ ===";
-    const Patient* collision = table.get("0000000000010000");
-    if (collision) {
-        qDebug().noquote() << QString("Найден (коллизия): %1 %2 %3")
-                                  .arg(QString::fromStdString(collision->surname))
-                                  .arg(QString::fromStdString(collision->name))
-                                  .arg(QString::fromStdString(collision->middlename));
-    } else {
-        qDebug().noquote() << "❌ ОШИБКА: Пациент с коллизией не найден перед удалением!";
-    }
-
-
-
-    qDebug().noquote() << "\n=== ПОИСК ===";
-    const Patient* p = table.get("0000000000999910");
-    if (p) {
-        qDebug().noquote() << QString("Найден: %1 %2 %3")
-                                  .arg(QString::fromStdString(p->surname))
-                                  .arg(QString::fromStdString(p->name))
-                                  .arg(QString::fromStdString(p->middlename));
-    }
-
-    qDebug().noquote() << "\n=== УДАЛЕНИЕ ===";
-    table.remove("0000000000999910");
-
-    qDebug().noquote() << "\n=== ПОИСК ПОСЛЕ УДАЛЕНИЯ ===";
-    const Patient* deleted = table.get("0000000000999910");
-    if (!deleted) {
-        qDebug().noquote() << "Пациент удалён корректно";
-    }
-
-    qDebug().noquote() << "\n=== ПОВТОРНАЯ ВСТАВКА ===";
-    table.insert("0000000000999910", "Петров Петр Петрович", 15, Month::фев, 1990);
-    qDebug().noquote() << "\n=== УДАЛЕНИЕ ЭЛЕМЕНТА С КОЛЛИЗИЕЙ ===";
-    table.remove("0000000000010000");
-
-    qDebug().noquote() << "\n=== ПОИСК ПОСЛЕ УДАЛЕНИЯ КОЛЛИЗИИ ===";
-    const Patient* removedCollided = table.get("0000000000010000");
-    if (!removedCollided) {
-        qDebug().noquote() << "Пациент с коллизией удалён корректно";
-    }
-
-
+    connect(loadAppointmentsAction, &QAction::triggered, this, [this]() {
+        loadAppointmentsFromFile("appointments.txt");
+    });
 
 }
 
@@ -152,3 +155,87 @@ MainWindow::~MainWindow()
 {
     delete ui;
 }
+void MainWindow::setupUI()
+{
+    createToolBar();
+    createTabs();
+}
+
+void MainWindow::createToolBar()
+{
+    toolBar = addToolBar("Main Toolbar");
+
+    loadPatientsAction = new QAction("Загрузить пациентов", this);
+    loadAppointmentsAction = new QAction("Загрузить приёмы", this);
+    addPatientAction = new QAction("Добавить пациента", this);
+    addAppointmentAction = new QAction("Добавить приём", this);
+    deletePatientAction = new QAction("Удалить пациента", this);
+    deleteAppointmentAction = new QAction("Удалить приём", this);
+    debugAction = new QAction("Окно отладки", this);
+    reportAction = new QAction("Сформировать отчёт", this);
+
+    toolBar->addAction(loadPatientsAction);
+    toolBar->addAction(loadAppointmentsAction);
+    toolBar->addSeparator();
+    toolBar->addAction(addPatientAction);
+    toolBar->addAction(addAppointmentAction);
+    toolBar->addSeparator();
+    toolBar->addAction(deletePatientAction);
+    toolBar->addAction(deleteAppointmentAction);
+    toolBar->addSeparator();
+    toolBar->addAction(debugAction);
+    toolBar->addAction(reportAction);
+}
+
+void MainWindow::createTabs() {
+    tabWidget = new QTabWidget(this);
+    setCentralWidget(tabWidget);
+
+    // Вкладка: Пациенты
+    patientTable = new QTableWidget(this);
+    patientTable->setColumnCount(3);
+    patientTable->setHorizontalHeaderLabels({"ФИО", "Полис ОМС", "Дата рождения"});
+    patientTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
+    // Вкладка: Приемы
+    appointmentTable = new QTableWidget(this);
+    appointmentTable->setColumnCount(4);
+    appointmentTable->setHorizontalHeaderLabels({"Полис ОМС", "Диагноз", "Врач", "Дата приёма"});
+    appointmentTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
+    // Вкладка: Отчёт
+    reportTable = new QTableWidget(this);
+    reportTable->setColumnCount(4);
+    reportTable->setHorizontalHeaderLabels({"Полис ОМС", "Врач", "Диагноз", "Дата приёма"});
+    reportTable->setColumnWidth(0, 150);
+    reportTable->setColumnWidth(1, 150);
+    reportTable->setColumnWidth(2, 150);
+    reportTable->setColumnWidth(3, 150);
+    reportTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
+    // Добавляем вкладки
+    tabWidget->addTab(patientTable, "Пациенты");
+    tabWidget->addTab(appointmentTable, "Приемы");
+    tabWidget->addTab(reportTable, "Отчёт");
+
+    // Вкладка: Визуализация хеш-таблицы
+    // Вкладка: Хэш таблица
+    hashTableView = new QTableWidget(this);
+    hashTableView->setColumnCount(7);
+    hashTableView->setHorizontalHeaderLabels({
+        "Индекс", "Хэш", "Статус", "Ключ", "ФИО", "Дата рождения", "Индекс в массиве"
+    });
+    hashTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
+    tabWidget->addTab(hashTableView, "Хэш таблица");
+
+
+    // Вкладка: Визуализация дерева
+    treeGraphicsView = new QGraphicsView(this);
+    treeScene = new QGraphicsScene(this);
+    treeGraphicsView->setScene(treeScene);
+    tabWidget->addTab(treeGraphicsView, "Дерево");
+
+
+}
+

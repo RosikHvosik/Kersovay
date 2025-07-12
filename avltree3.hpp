@@ -1,9 +1,10 @@
-#ifndef AVLTREE2_H
-#define AVLTREE2_H
+#ifndef AVLTREE3_HPP
+#define AVLTREE3_HPP
 
 #include "linkedlist.h"
 #include <functional>
 #include <utility>
+#include <QVariant>
 #include <iostream>
 #include <algorithm>
 
@@ -62,9 +63,6 @@ private:
 
     Node* findNode(Node* node, const KeyType& key) const;
 };
-
-#endif // AVLTREE2_H
-
 
 template<typename KeyType, typename T, typename ArrayType>
 AVLTree<KeyType, T, ArrayType>::AVLTree() : root(nullptr) {}
@@ -563,4 +561,5 @@ void AVLTree<KeyType, T, ArrayType>::traverseIndex(
 
     traverseIndex(node->right, callback);
 }
+#endif // AVLTREE3_HPP
 

@@ -76,10 +76,6 @@ private:
     }
 
 
-
-
-
-
     std::size_t findPos(std::size_t key, bool inserting) const
     {
         std::size_t pos = hash_function(key);
@@ -261,6 +257,19 @@ public:
                 break;
             }
     }
+    //добавил жтот метод для отображения
+
+    std::string getKeyForIndex(std::size_t index) const {
+        for (std::size_t i = 0; i < m_size; ++i) {
+            if (m_table[i].status == Status::Active && m_table[i].arrayIndex == index) {
+                return std::to_string(m_table[i].key);
+            }
+        }
+        return "";
+    }
+
+
+
 };
 
 #endif
