@@ -8,8 +8,24 @@
 #include "types.h"
 #include "array.h"
 
+// ОБЪЯВЛЕНИЯ ФУНКЦИЙ
+std::string trim(const std::string& str);
+Month parseMonth(const std::string& m);
+std::string removeSpaces(const std::string& str);
+bool parsePatientFile(const std::string& filename, Array<Patient, 1000>& patientArray);
+
+// РЕАЛИЗАЦИИ ФУНКЦИЙ
+
+// Удаляет начальные/конечные пробелы
+inline std::string trim(const std::string& str) {
+    const auto begin = str.find_first_not_of(" \t");
+    if (begin == std::string::npos) return "";
+    const auto end = str.find_last_not_of(" \t");
+    return str.substr(begin, end - begin + 1);
+}
+
 // 🔁 Преобразует "янв" → Month::янв
-Month parseMonth(const std::string& m) {
+inline Month parseMonth(const std::string& m) {
     if (m == "янв") return Month::янв;
     if (m == "фев") return Month::фев;
     if (m == "мар") return Month::мар;
@@ -26,14 +42,14 @@ Month parseMonth(const std::string& m) {
 }
 
 // 🧹 Удаляет пробелы
-std::string removeSpaces(const std::string& str) {
+inline std::string removeSpaces(const std::string& str) {
     std::string res = str;
     res.erase(std::remove(res.begin(), res.end(), ' '), res.end());
     return res;
 }
 
 // 📄 Парсит файл и заполняет массив пациентов
-bool parsePatientFile(const std::string& filename, Array<Patient, 1000>& patientArray) {
+inline bool parsePatientFile(const std::string& filename, Array<Patient, 1000>& patientArray) {
     std::ifstream file(filename);
     if (!file.is_open()) {
         qDebug() << "Не удалось открыть файл пациентов:" << QString::fromStdString(filename);
@@ -90,15 +106,5 @@ bool parsePatientFile(const std::string& filename, Array<Patient, 1000>& patient
 
     return true;
 }
-
-
-// Удаляет начальные/конечные пробелы
-std::string trim(const std::string& str) {
-    const auto begin = str.find_first_not_of(" \t");
-    if (begin == std::string::npos) return "";
-    const auto end = str.find_last_not_of(" \t");
-    return str.substr(begin, end - begin + 1);
-}
-
 
 #endif // PATIENTPARSER_H

@@ -24,6 +24,14 @@ class AVLTree {
 public:
     using Node = AVLNode<KeyType, T, ArrayType>;
 
+    // Структура для статистики дерева
+    struct TreeStatistics {
+        int totalNodes;
+        int totalElements;
+        int maxDepth;
+        int uniqueKeys;
+    };
+
     AVLTree();
     ~AVLTree();
 
@@ -42,6 +50,13 @@ public:
     void clear();
     Node* getRoot() const;
     bool isEmpty() const;
+
+    // НОВЫЕ МЕТОДЫ ДЛЯ РЕФЕРЕНЦИАЛЬНОЙ ЦЕЛОСТНОСТИ
+    bool keyExists(const KeyType& key) const;
+    int getCountForKey(const KeyType& key) const;
+    std::vector<KeyType> getAllKeys() const;
+    TreeStatistics getStatistics() const;
+    bool validateIntegrity(const ArrayType& array) const;
 
 private:
     Node* root;
@@ -64,6 +79,7 @@ private:
     Node* findNode(Node* node, const KeyType& key) const;
 };
 
+// РЕАЛИЗАЦИЯ КОНСТРУКТОРА И ДЕСТРУКТОРА
 template<typename KeyType, typename T, typename ArrayType>
 AVLTree<KeyType, T, ArrayType>::AVLTree() : root(nullptr) {}
 
@@ -72,7 +88,7 @@ AVLTree<KeyType, T, ArrayType>::~AVLTree() {
     clear();
 }
 
-
+// РЕАЛИЗАЦИЯ МЕТОДОВ ОЧИСТКИ
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::clear() {
     qDebug().noquote() << "[clear] Очистка дерева начата";
@@ -80,7 +96,6 @@ void AVLTree<KeyType, T, ArrayType>::clear() {
     root = nullptr;
     qDebug().noquote() << "[clear] Дерево очищено (root = nullptr)";
 }
-
 
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::clear(Node* node) {
@@ -95,12 +110,11 @@ void AVLTree<KeyType, T, ArrayType>::clear(Node* node) {
     delete node;
 }
 
-
+// РЕАЛИЗАЦИЯ МЕТОДОВ БАЛАНСИРОВКИ
 template<typename KeyType, typename T, typename ArrayType>
 int AVLTree<KeyType, T, ArrayType>::getHeight(Node* node) const {
     return node ? node->height : 0;
 }
-
 
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::updateHeight(Node* node) {
@@ -108,12 +122,10 @@ void AVLTree<KeyType, T, ArrayType>::updateHeight(Node* node) {
         node->height = 1 + std::max(getHeight(node->left), getHeight(node->right));
 }
 
-
 template<typename KeyType, typename T, typename ArrayType>
 int AVLTree<KeyType, T, ArrayType>::getBalance(Node* node) const {
     return node ? getHeight(node->left) - getHeight(node->right) : 0;
 }
-
 
 template<typename KeyType, typename T, typename ArrayType>
 typename AVLTree<KeyType, T, ArrayType>::Node*
@@ -131,8 +143,6 @@ AVLTree<KeyType, T, ArrayType>::rotateLeft(Node* x) {
     return y;
 }
 
-
-
 template<typename KeyType, typename T, typename ArrayType>
 typename AVLTree<KeyType, T, ArrayType>::Node*
 AVLTree<KeyType, T, ArrayType>::rotateRight(Node* y) {
@@ -148,8 +158,6 @@ AVLTree<KeyType, T, ArrayType>::rotateRight(Node* y) {
 
     return x;
 }
-
-
 
 template<typename KeyType, typename T, typename ArrayType>
 typename AVLTree<KeyType, T, ArrayType>::Node*
@@ -186,8 +194,7 @@ AVLTree<KeyType, T, ArrayType>::balance(Node* node) {
     return node;
 }
 
-
-
+// РЕАЛИЗАЦИЯ МЕТОДОВ ВСТАВКИ
 template<typename KeyType, typename T, typename ArrayType>
 typename AVLTree<KeyType, T, ArrayType>::Node*
 AVLTree<KeyType, T, ArrayType>::insert(Node* node, const KeyType& key, std::size_t index) {
@@ -219,8 +226,6 @@ AVLTree<KeyType, T, ArrayType>::insert(Node* node, const KeyType& key, std::size
     return balance(node);
 }
 
-
-
 template<typename KeyType, typename T, typename ArrayType>
 bool AVLTree<KeyType, T, ArrayType>::insert(const KeyType& key, const T& value, ArrayType& array) {
     qDebug().noquote() << "[insert] Попытка добавить элемент с ключом:"
@@ -238,8 +243,6 @@ bool AVLTree<KeyType, T, ArrayType>::insert(const KeyType& key, const T& value, 
     return true;
 }
 
-
-
 template<typename KeyType, typename T, typename ArrayType>
 bool AVLTree<KeyType, T, ArrayType>::insertIndex(const KeyType& key, std::size_t index) {
     qDebug().noquote() << "[insertIndex] Вставка индекса:" << index
@@ -249,8 +252,7 @@ bool AVLTree<KeyType, T, ArrayType>::insertIndex(const KeyType& key, std::size_t
     return true;
 }
 
-
-
+// РЕАЛИЗАЦИЯ МЕТОДОВ ПОИСКА
 template<typename KeyType, typename T, typename ArrayType>
 typename AVLTree<KeyType, T, ArrayType>::Node*
 AVLTree<KeyType, T, ArrayType>::findNode(Node* node, const KeyType& key) const {
@@ -271,8 +273,7 @@ AVLTree<KeyType, T, ArrayType>::findNode(Node* node, const KeyType& key) const {
     return key < node->key ? findNode(node->left, key) : findNode(node->right, key);
 }
 
-
-
+// РЕАЛИЗАЦИЯ МЕТОДОВ УДАЛЕНИЯ
 template<typename KeyType, typename T, typename ArrayType>
 bool AVLTree<KeyType, T, ArrayType>::remove(const KeyType& key, const T& value, ArrayType& array) {
     qDebug().noquote() << QString("=== УДАЛЕНИЕ AVL: ключ = \"%1\" ===").arg(QVariant::fromValue(key).toString());
@@ -319,8 +320,6 @@ bool AVLTree<KeyType, T, ArrayType>::remove(const KeyType& key, const T& value, 
     return true;
 }
 
-
-
 template<typename KeyType, typename T, typename ArrayType>
 typename AVLTree<KeyType, T, ArrayType>::Node*
 AVLTree<KeyType, T, ArrayType>::removeNode(Node* node, const KeyType& key) {
@@ -361,8 +360,6 @@ AVLTree<KeyType, T, ArrayType>::removeNode(Node* node, const KeyType& key) {
     return balance(node);
 }
 
-
-
 template<typename KeyType, typename T, typename ArrayType>
 bool AVLTree<KeyType, T, ArrayType>::removeAllByKey(const KeyType& key) {
     qDebug().noquote() << QString("=== УДАЛЕНИЕ ВСЕХ ПО КЛЮЧУ: %1 ===")
@@ -379,8 +376,7 @@ bool AVLTree<KeyType, T, ArrayType>::removeAllByKey(const KeyType& key) {
     return true;
 }
 
-
-
+// РЕАЛИЗАЦИЯ ВСПОМОГАТЕЛЬНЫХ МЕТОДОВ
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::fixIndex(std::size_t oldIdx, std::size_t newIdx) {
     qDebug().noquote() << QString("AVL fixIndex: %1 → %2").arg(oldIdx).arg(newIdx);
@@ -408,8 +404,6 @@ void AVLTree<KeyType, T, ArrayType>::fixIndex(std::size_t oldIdx, std::size_t ne
     fix(root);
 }
 
-
-
 template<typename KeyType, typename T, typename ArrayType>
 typename AVLTree<KeyType, T, ArrayType>::Node*
 AVLTree<KeyType, T, ArrayType>::getRoot() const {
@@ -422,23 +416,14 @@ AVLTree<KeyType, T, ArrayType>::getRoot() const {
     return root;
 }
 
-
-
-template<typename KeyType, typename T, typename ArrayType>
-bool AVLTree<KeyType, T, ArrayType>::isEmpty() const {
-    return root == nullptr;
-}
-
-
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::traverse(
     std::function<void(const T&, const KeyType&)> callback,
     const ArrayType& array) const
 {
-    qDebug().noquote() << "[traverse] Начат прямой обход дерева";
+    qDebug().noquote() << "[traverse] Начат обход дерева справа налево";
     traverse(root, callback, array);
 }
-
 
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::traverse(
@@ -448,7 +433,8 @@ void AVLTree<KeyType, T, ArrayType>::traverse(
 {
     if (!node) return;
 
-    traverse(node->left, callback, array);
+    // ОБХОД СПРАВА НАЛЕВО: сначала правое поддерево
+    traverse(node->right, callback, array);
 
     qDebug().noquote() << QString("[traverse] Обработка узла с ключом: %1")
                               .arg(QVariant::fromValue(node->key).toString());
@@ -469,10 +455,9 @@ void AVLTree<KeyType, T, ArrayType>::traverse(
         qDebug().noquote() << "  → Список индексов пуст";
     }
 
-    traverse(node->right, callback, array);
+    // Затем левое поддерево
+    traverse(node->left, callback, array);
 }
-
-
 
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::traverseFiltered(
@@ -480,10 +465,9 @@ void AVLTree<KeyType, T, ArrayType>::traverseFiltered(
     std::function<void(const T&)> onAccept,
     const ArrayType& array) const
 {
-    qDebug().noquote() << "[traverseFiltered] Начат обход с фильтрацией";
+    qDebug().noquote() << "[traverseFiltered] Начат обход с фильтрацией (справа налево)";
     traverseFiltered(root, filter, onAccept, array);
 }
-
 
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::traverseFiltered(
@@ -494,7 +478,8 @@ void AVLTree<KeyType, T, ArrayType>::traverseFiltered(
 {
     if (!node) return;
 
-    traverseFiltered(node->left, filter, onAccept, array);
+    // ОБХОД СПРАВА НАЛЕВО
+    traverseFiltered(node->right, filter, onAccept, array);
 
     qDebug().noquote() << QString("[traverseFiltered] Узел с ключом: %1")
                               .arg(QVariant::fromValue(node->key).toString());
@@ -518,19 +503,16 @@ void AVLTree<KeyType, T, ArrayType>::traverseFiltered(
     if (passed == 0)
         qDebug().noquote() << "  → ничего не подошло по фильтру";
 
-    traverseFiltered(node->right, filter, onAccept, array);
+    traverseFiltered(node->left, filter, onAccept, array);
 }
-
-
 
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::traverseIndex(
     std::function<void(std::size_t, const KeyType&)> callback) const
 {
-    qDebug().noquote() << "[traverseIndex] Начат обход индексов";
+    qDebug().noquote() << "[traverseIndex] Начат обход индексов (справа налево)";
     traverseIndex(root, callback);
 }
-
 
 template<typename KeyType, typename T, typename ArrayType>
 void AVLTree<KeyType, T, ArrayType>::traverseIndex(
@@ -539,7 +521,8 @@ void AVLTree<KeyType, T, ArrayType>::traverseIndex(
 {
     if (!node) return;
 
-    traverseIndex(node->left, callback);
+    // ОБХОД СПРАВА НАЛЕВО
+    traverseIndex(node->right, callback);
 
     qDebug().noquote() << QString("[traverseIndex] Узел с ключом: %1")
                               .arg(QVariant::fromValue(node->key).toString());
@@ -559,7 +542,111 @@ void AVLTree<KeyType, T, ArrayType>::traverseIndex(
         qDebug().noquote() << "  → список индексов пуст";
     }
 
-    traverseIndex(node->right, callback);
+    traverseIndex(node->left, callback);
 }
-#endif // AVLTREE3_HPP
 
+// РЕАЛИЗАЦИЯ НОВЫХ МЕТОДОВ ДЛЯ РЕФЕРЕНЦИАЛЬНОЙ ЦЕЛОСТНОСТИ
+template<typename KeyType, typename T, typename ArrayType>
+bool AVLTree<KeyType, T, ArrayType>::keyExists(const KeyType& key) const {
+    qDebug().noquote() << QString("[keyExists] Проверка ключа: %1")
+                              .arg(QVariant::fromValue(key).toString());
+
+    Node* node = findNode(root, key);
+    bool exists = (node != nullptr && !node->indexList.isEmpty());
+
+    qDebug().noquote() << QString("→ Результат: %1").arg(exists ? "НАЙДЕН" : "НЕ НАЙДЕН");
+    return exists;
+}
+
+template<typename KeyType, typename T, typename ArrayType>
+int AVLTree<KeyType, T, ArrayType>::getCountForKey(const KeyType& key) const {
+    Node* node = findNode(root, key);
+    if (!node) return 0;
+
+    return node->indexList.getSize();
+}
+
+template<typename KeyType, typename T, typename ArrayType>
+std::vector<KeyType> AVLTree<KeyType, T, ArrayType>::getAllKeys() const {
+    std::vector<KeyType> keys;
+
+    std::function<void(Node*)> collectKeys = [&](Node* node) {
+        if (!node) return;
+
+        collectKeys(node->left);
+        if (!node->indexList.isEmpty()) {
+            keys.push_back(node->key);
+        }
+        collectKeys(node->right);
+    };
+
+    collectKeys(root);
+
+    qDebug().noquote() << QString("Собрано уникальных ключей: %1").arg(keys.size());
+    return keys;
+}
+
+template<typename KeyType, typename T, typename ArrayType>
+typename AVLTree<KeyType, T, ArrayType>::TreeStatistics
+AVLTree<KeyType, T, ArrayType>::getStatistics() const {
+    TreeStatistics stats = {0, 0, 0, 0};
+
+    std::function<int(Node*, int)> calculateStats = [&](Node* node, int depth) -> int {
+        if (!node) return depth - 1;
+
+        stats.totalNodes++;
+        stats.totalElements += node->indexList.getSize();
+        if (!node->indexList.isEmpty()) {
+            stats.uniqueKeys++;
+        }
+
+        int leftDepth = calculateStats(node->left, depth + 1);
+        int rightDepth = calculateStats(node->right, depth + 1);
+
+        return std::max(leftDepth, rightDepth);
+    };
+
+    stats.maxDepth = calculateStats(root, 0);
+
+    qDebug().noquote() << QString("Статистика дерева: узлов=%1, элементов=%2, глубина=%3, ключей=%4")
+                              .arg(stats.totalNodes)
+                              .arg(stats.totalElements)
+                              .arg(stats.maxDepth)
+                              .arg(stats.uniqueKeys);
+
+    return stats;
+}
+
+template<typename KeyType, typename T, typename ArrayType>
+bool AVLTree<KeyType, T, ArrayType>::validateIntegrity(const ArrayType& array) const {
+    bool isValid = true;
+
+    std::function<void(Node*)> validate = [&](Node* node) {
+        if (!node) return;
+
+        // Проверяем, что все индексы в списке действительны
+        lNode* current = node->indexList.getHead();
+        if (current) {
+            do {
+                if (current->arrayIndex >= array.Size()) {
+                    qDebug().noquote() << QString("ОШИБКА: индекс %1 больше размера массива %2")
+                                              .arg(current->arrayIndex)
+                                              .arg(array.Size());
+                    isValid = false;
+                }
+                current = current->next;
+            } while (current != node->indexList.getHead());
+        }
+
+        validate(node->left);
+        validate(node->right);
+    };
+
+    validate(root);
+
+    qDebug().noquote() << QString("Проверка целостности: %1")
+                              .arg(isValid ? "ПРОЙДЕНА" : "ПРОВАЛЕНА");
+    return isValid;
+}
+
+#endif // AVLTREE3_HPP

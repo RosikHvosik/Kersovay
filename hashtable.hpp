@@ -11,6 +11,7 @@
 #include<sstream>
 #define MAX_SIZE 1000
 #define DIGITS 4
+
 inline std::string uint128_to_string(__uint128_t value) {
     if (value == 0) return "0";
     std::string result;
@@ -20,6 +21,7 @@ inline std::string uint128_to_string(__uint128_t value) {
     }
     return result;
 }
+
 struct HashRecord
 {
     std::size_t key{0};
@@ -48,7 +50,6 @@ private:
 
     const std::size_t upos = -1;
 
-
     std::size_t hash_function(std::size_t key) const {
         __uint128_t square = static_cast<__uint128_t>(key) * key;
         std::string squareStr = uint128_to_string(square);
@@ -74,16 +75,18 @@ private:
         return finalHash;
     }
 
-
+    // ИСПРАВЛЕННАЯ функция поиска позиции
     std::size_t findPos(std::size_t key, bool inserting) const
     {
         std::size_t pos = hash_function(key);
-        std::size_t step = hash_function(key) + 1;
+        std::size_t step = 1; // Простое линейное пробирование вместо сложного
 
         qDebug().noquote() << QString(" Ищем позицию: Ключ = %1, Начальная позиция = %2, Шаг = %3")
                                   .arg(key)
                                   .arg(pos)
                                   .arg(step);
+
+        std::size_t startPos = pos; // Запоминаем начальную позицию для обнаружения зацикливания
 
         for (std::size_t i = 0; i < m_size; ++i)
         {
@@ -91,25 +94,39 @@ private:
             qDebug().noquote() << QString("  Пробируем [%1]: Позиция = %2, Статус = %3, Ключ = %4")
                                       .arg(i)
                                       .arg(pos)
-                                      .arg(record.status == Status::Empty ? "Empty" : "Active")
+                                      .arg(record.status == Status::Empty ? "Empty" :
+                                               record.status == Status::Active ? "Active" : "Deleted")
                                       .arg(record.key);
 
-            if (record.status == Status::Empty)
+            // При вставке - ищем пустое место или удаленное
+            if (inserting && (record.status == Status::Empty || record.status == Status::Deleted))
             {
-                if (inserting)
-                {
-                    qDebug().noquote() << QString("  → Нашли пустую позицию = %1").arg(pos);
-                }
-                return inserting ? pos : upos;
+                qDebug().noquote() << QString("  → Нашли свободную позицию = %1").arg(pos);
+                return pos;
             }
 
-            if (record.status == Status::Active && record.key == key)
+            // При поиске - ищем только активную запись с нужным ключом
+            if (!inserting && record.status == Status::Active && record.key == key)
             {
                 qDebug().noquote() << QString("  → Нашли на позиции = %1").arg(pos);
                 return pos;
             }
 
+            // При поиске - если дошли до пустой ячейки, элемента нет
+            if (!inserting && record.status == Status::Empty)
+            {
+                qDebug().noquote() << QString("  → Дошли до пустой ячейки, элемент не найден");
+                return upos;
+            }
+
             pos = (pos + step) % m_size;
+
+            // Проверяем зацикливание
+            if (i > 0 && pos == startPos) {
+                qDebug().noquote() << "  → Полный обход таблицы, больше нет мест";
+                return upos;
+            }
+
             qDebug().noquote() << QString("  → Коллизия, следующая позиция = %1").arg(pos);
         }
 
@@ -133,6 +150,7 @@ private:
         qDebug().noquote() << QString("Перевели строку в ключ: \"%1\" → %2").arg(debugStr).arg(key);
         return key;
     }
+
 public:
     HashTable()
     {
@@ -155,13 +173,17 @@ public:
         in >> surname >> name >> middlename;
 
         Date date{day, month, year};
-        //распарсит ли оно тут ? т.к фио это Фамимлия Имя Отчество
         Patient patient{surname, name, middlename, date};
 
-        //для дебагера
         qDebug().noquote() << QString("=== Вставка: \"%1\" ===").arg(QString::fromStdString(OMS));
 
         std::size_t numKey = stringToKey(OMS);
+
+        // Проверяем, не переполнена ли таблица
+        if (m_count >= m_size) {
+            qDebug().noquote() << "Хэш-таблица переполнена";
+            throw std::runtime_error("Хэш-таблица переполнена");
+        }
 
         if (findPos(numKey, false) != upos)
         {
@@ -187,7 +209,7 @@ public:
         m_table[pos] = {numKey, arrayIdx, Status::Active};
         ++m_count;
 
-        qDebug().noquote() << QString("Успешная вставка : Позиция = %1, Индекс Массива = %2, Новый размер = %3")
+        qDebug().noquote() << QString("Успешная вставка: Позиция = %1, Индекс Массива = %2, Новый размер = %3")
                                   .arg(pos)
                                   .arg(arrayIdx)
                                   .arg(m_count);
@@ -201,9 +223,19 @@ public:
         return m_table[index];
     }
 
+    std::size_t getHashValue(const std::string& policy) const
+    {
+        std::size_t key = stringToKey(policy);
+        return hash_function(key);
+    }
+
+    std::size_t getHashValue(std::size_t key) const {
+        return hash_function(key);
+    }
+
     const Patient *get(const std::string &OMS) const
     {
-        qDebug().noquote() << QString("=== Взятие информации клиента: \"%1\" ===").arg(QString::fromStdString(OMS));
+        qDebug().noquote() << QString("=== Получение информации клиента: \"%1\" ===").arg(QString::fromStdString(OMS));
 
         std::size_t key = stringToKey(OMS);
         std::size_t pos = findPos(key, false);
@@ -214,7 +246,7 @@ public:
             return nullptr;
         }
 
-        qDebug().noquote() << QString("Удаляем на позиции = %1, Индекс массива = %2")
+        qDebug().noquote() << QString("Найден на позиции = %1, Индекс массива = %2")
                                   .arg(pos)
                                   .arg(m_table[pos].arrayIndex);
         return &PatientArray[m_table[pos].arrayIndex];
@@ -238,7 +270,7 @@ public:
                                   .arg(m_table[pos].arrayIndex);
 
         PatientArray.Remove(m_table[pos].arrayIndex, *this);
-        m_table[pos].status = Status::Empty;
+        m_table[pos].status = Status::Deleted; // Помечаем как удаленное, а не Empty
         --m_count;
 
         return true;
@@ -256,7 +288,6 @@ public:
                 break;
             }
     }
-    //добавил жтот метод для отображения
 
     std::string getKeyForIndex(std::size_t index) const {
         for (std::size_t i = 0; i < m_size; ++i) {
@@ -267,8 +298,47 @@ public:
         return "";
     }
 
+    bool exists(const std::string& OMS) const {
+        qDebug().noquote() << QString("=== Проверка существования: \"%1\" ===")
+                                  .arg(QString::fromStdString(OMS));
 
+        std::size_t key = stringToKey(OMS);
+        std::size_t pos = findPos(key, false);
 
+        bool found = (pos != upos);
+        qDebug().noquote() << QString("→ Результат: %1").arg(found ? "НАЙДЕН" : "НЕ НАЙДЕН");
+
+        return found;
+    }
+
+    std::vector<std::string> getAllPolicies() const {
+        std::vector<std::string> policies;
+
+        for (std::size_t i = 0; i < m_size; ++i) {
+            if (m_table[i].status == Status::Active) {
+                policies.push_back(m_table[i].getKey());
+            }
+        }
+
+        qDebug().noquote() << QString("Найдено активных полисов: %1").arg(policies.size());
+        return policies;
+    }
+
+    struct Statistics {
+        std::size_t totalSlots;
+        std::size_t usedSlots;
+        std::size_t emptySlots;
+        double loadFactor;
+    };
+
+    Statistics getStatistics() const {
+        Statistics stats;
+        stats.totalSlots = m_size;
+        stats.usedSlots = m_count;
+        stats.emptySlots = m_size - m_count;
+        stats.loadFactor = static_cast<double>(m_count) / m_size;
+
+        return stats;
+    }
 };
-
 #endif

@@ -3,6 +3,7 @@
 
 #include <string>
 #include "types.h"
+#include "globals.h"
 struct lNode
 {
     std::size_t arrayIndex;

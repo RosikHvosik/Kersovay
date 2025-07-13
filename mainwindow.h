@@ -37,6 +37,7 @@ public:
     ~MainWindow();
 
 private slots:
+    void showIntegrityReport();
     void loadPatientsFromFile();
     void loadAppointmentsFromFile();
     void addPatient();
@@ -49,8 +50,8 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
-
     // UI компоненты
+    QTableWidget *avlTreeTableView;
     QToolBar *toolBar;
     QTabWidget *tabWidget;
     QTableWidget *patientTable;
@@ -76,6 +77,9 @@ private:
     std::vector<std::string> appointmentPolicies; // Для связи приёмов с полисами
 
     // Вспомогательные методы
+    void checkReferentialIntegrity();
+    void generateIntegrityReport();
+
     void setupUI();
     void createToolBar();
     void createTabs();
@@ -83,10 +87,17 @@ private:
     void updateAppointmentTable();
     void updateHashTableView();
     void updateTreeView();
+    void updateAVLTreeTableView();
 
     QString formatDate(const Date& date);
+    //методы с 9 утра
+    bool patientExists(const std::string& policy) const;
+    void deleteAllAppointmentsForPatient(const std::string& policy);
+    bool validateAppointmentData(const std::string& policy, const Appointment& appointment);
+    //выше методы с 9 утра
     bool parsePatientLine(const QString& line, std::string& policy, Patient& patient);
     bool parseAppointmentLine(const QString& line, std::string& policy, Appointment& appointment);
+    bool isValidPolicy(const std::string& policy) const;
 };
 
 #endif // MAINWINDOW_H
