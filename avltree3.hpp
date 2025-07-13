@@ -11,7 +11,7 @@
 template<typename KeyType, typename T, typename ArrayType>
 struct AVLNode {
     KeyType key;
-    linkedList indexList; // список индексов в массиве
+    linkedList indexList;
     int height;
     AVLNode* left;
     AVLNode* right;
@@ -24,7 +24,6 @@ class AVLTree {
 public:
     using Node = AVLNode<KeyType, T, ArrayType>;
 
-    // Структура для статистики дерева
     struct TreeStatistics {
         int totalNodes;
         int totalElements;
@@ -46,12 +45,13 @@ public:
                           std::function<void(const T&)> onAccept,
                           const ArrayType& array) const;
     void traverseIndex(std::function<void(std::size_t, const KeyType&)> callback) const;
+    void traverseByKey(const KeyType& key, std::function<void(std::size_t)> callback) const;
+
 
     void clear();
     Node* getRoot() const;
     bool isEmpty() const;
 
-    // НОВЫЕ МЕТОДЫ ДЛЯ РЕФЕРЕНЦИАЛЬНОЙ ЦЕЛОСТНОСТИ
     bool keyExists(const KeyType& key) const;
     int getCountForKey(const KeyType& key) const;
     std::vector<KeyType> getAllKeys() const;
@@ -648,5 +648,22 @@ bool AVLTree<KeyType, T, ArrayType>::validateIntegrity(const ArrayType& array) c
                               .arg(isValid ? "ПРОЙДЕНА" : "ПРОВАЛЕНА");
     return isValid;
 }
+template<typename KeyType, typename T, typename ArrayType>
+void AVLTree<KeyType, T, ArrayType>::traverseByKey(const KeyType& key, std::function<void(std::size_t)> callback) const {
+    Node* node = findNode(root, key);
+    if (!node) {
+        qDebug().noquote() << QString("[traverseByKey] Ключ %1 не найден").arg(QString::fromStdString(key));
+        return;
+    }
+
+    lNode* current = node->indexList.getHead();
+    if (current) {
+        do {
+            callback(current->arrayIndex);
+            current = current->next;
+        } while (current != node->indexList.getHead());
+    }
+}
+
 
 #endif // AVLTREE3_HPP

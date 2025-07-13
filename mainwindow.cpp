@@ -26,7 +26,7 @@
 #include <climits>
 #include <map>
 #include <functional>
-
+#include <QLabel>
 #include "array.h"
 #include "hashtable.hpp"
 #include "avltree3.hpp"
@@ -221,6 +221,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(reportAction, &QAction::triggered, this, &MainWindow::generateReport);
     connect(debugAction, &QAction::triggered, this, &MainWindow::showDebugWindow);
 
+
     QAction* integrityAction = new QAction("Проверка целостности", this);
     connect(integrityAction, &QAction::triggered, this, &MainWindow::showIntegrityReport);
     toolBar->addSeparator();
@@ -252,9 +253,6 @@ void MainWindow::setupTreeVisualization() {
     treeScene->setBackgroundBrush(QBrush(QColor(248, 248, 255)));
 }
 
-// В mainwindow.cpp найдите метод createTabs() и измените его так:
-
-// В mainwindow.cpp замените метод createTabs:
 
 void MainWindow::createTabs() {
     tabWidget = new QTabWidget(this);
@@ -273,10 +271,41 @@ void MainWindow::createTabs() {
     appointmentTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
     // Вкладка: Отчёт
+    // Вкладка: Отчёт
     reportTable = new QTableWidget(this);
-    reportTable->setColumnCount(4);
-    reportTable->setHorizontalHeaderLabels({"Полис ОМС", "Врач", "Диагноз", "Дата приёма"});
+    reportTable->setColumnCount(5);
+    reportTable->setHorizontalHeaderLabels({
+        "Полис ОМС", "Врач", "Диагноз", "Дата приёма", "ФИО пациента"
+    });
     reportTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
+    fioFilterEdit = new QLineEdit(this);
+    fioFilterEdit->setPlaceholderText("ФИО пациента (точно)");
+
+    doctorFilterEdit = new QLineEdit(this);
+    doctorFilterEdit->setPlaceholderText("Тип врача");
+
+    dateFilterEdit = new QDateEdit(this);
+    dateFilterEdit->setDisplayFormat("dd.MM.yyyy");
+    dateFilterEdit->setCalendarPopup(true);
+    dateFilterEdit->setDate(QDate::currentDate());
+
+    QHBoxLayout* filterLayout = new QHBoxLayout();
+    filterLayout->addWidget(new QLabel("ФИО:"));
+    filterLayout->addWidget(fioFilterEdit);
+    filterLayout->addWidget(new QLabel("Врач:"));
+    filterLayout->addWidget(doctorFilterEdit);
+    filterLayout->addWidget(new QLabel("Дата:"));
+    filterLayout->addWidget(dateFilterEdit);
+
+    QVBoxLayout* reportLayout = new QVBoxLayout();
+    reportLayout->addLayout(filterLayout);
+    reportLayout->addWidget(reportTable);
+
+    QWidget* reportTab = new QWidget(this);
+    reportTab->setLayout(reportLayout);
+
+
 
     // Вкладка: Хэш таблица
     hashTableView = new QTableWidget(this);
@@ -302,7 +331,8 @@ void MainWindow::createTabs() {
     // Добавляем вкладки
     tabWidget->addTab(patientTable, "Пациенты");
     tabWidget->addTab(appointmentTable, "Приемы");
-    tabWidget->addTab(reportTable, "Отчёт");
+    tabWidget->addTab(reportTab, "Отчёт");  // ← ✅ правильно
+
     tabWidget->addTab(hashTableView, "Хэш таблица");
     tabWidget->addTab(avlTreeTableView, "AVL-дерево (таблица)");
     tabWidget->addTab(treeGraphicsView, "Дерево (граф)");
@@ -374,6 +404,11 @@ void MainWindow::createToolBar()
     toolBar->addSeparator();
     toolBar->addAction(debugAction);
     toolBar->addAction(reportAction);
+    searchSplitAction = new QAction("Раздельный поиск", this);
+    connect(searchSplitAction, &QAction::triggered, this, &MainWindow::showSplitSearchDialog);
+    toolBar->addSeparator();
+    toolBar->addAction(searchSplitAction);
+
 }
 
 void MainWindow::loadPatientsFromFile() {
@@ -866,28 +901,186 @@ void MainWindow::deleteAppointment() {
 }
 
 void MainWindow::generateReport() {
+    reportTable->clearContents();
     reportTable->setRowCount(0);
 
-    // Простой отчёт - показываем все приёмы
-    for (std::size_t i = 0; i < AppointmentArray.Size() && i < appointmentPolicies.size(); ++i) {
-        const Appointment& app = AppointmentArray[i];
+    // Получаем значения фильтров
+    QString fioText = fioFilterEdit->text().trimmed();
+    QString doctorText = doctorFilterEdit->text().trimmed();
+    QDate qdate = dateFilterEdit->date();
 
-        QString policy = QString::fromStdString(appointmentPolicies[i]);
-        QString doctor = QString::fromStdString(app.doctorType);
-        QString diagnosis = QString::fromStdString(app.diagnosis);
-        QString date = formatDate(app.appointmentDate);
+    std::string fioFilter = fioText.toStdString();
+    std::string doctorFilter = doctorText.toStdString();
+    Date dateFilter = {qdate.day(), static_cast<Month>(qdate.month()), qdate.year()};
 
-        int row = reportTable->rowCount();
-        reportTable->insertRow(row);
-        reportTable->setItem(row, 0, new QTableWidgetItem(policy));
-        reportTable->setItem(row, 1, new QTableWidgetItem(doctor));
-        reportTable->setItem(row, 2, new QTableWidgetItem(diagnosis));
-        reportTable->setItem(row, 3, new QTableWidgetItem(date));
+    // 🔴 ПРОВЕРКА: все три поля должны быть заполнены
+    if (fioFilter.empty() || doctorFilter.empty()) {
+        QMessageBox::warning(this, "Недостаточно данных",
+                             "Пожалуйста, заполните все три поля фильтрации:\nФИО, врач и дата.");
+        return;
     }
 
-    // Переключаемся на вкладку отчёта
+    // 🔍 Поиск по дереву
+    avlTree.traverseFiltered(
+        [&](const Appointment& app) {
+            if (app.doctorType != doctorFilter)
+                return false;
+
+            if (!(app.appointmentDate == dateFilter))
+                return false;
+
+            return true;
+        },
+        [&](const Appointment& app) {
+            for (std::size_t i = 0; i < AppointmentArray.Size(); ++i) {
+                if (AppointmentArray[i] == app) {
+                    std::string policy = appointmentPolicies[i];
+
+                    const Patient* patient = hashTable.get(policy);
+                    if (!patient) return;
+
+                    std::string fioActual = patient->surname + " " + patient->name + " " + patient->middlename;
+                    if (fioActual != fioFilter)
+                        return;
+
+                    int row = reportTable->rowCount();
+                    reportTable->insertRow(row);
+
+                    reportTable->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(policy)));
+                    reportTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(app.doctorType)));
+                    reportTable->setItem(row, 2, new QTableWidgetItem(QString::fromStdString(app.diagnosis)));
+                    reportTable->setItem(row, 3, new QTableWidgetItem(formatDate(app.appointmentDate)));
+                    reportTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(fioActual)));
+                    break;
+                }
+            }
+        },
+        AppointmentArray);
+
+    if (reportTable->columnCount() != 5) {
+        reportTable->setColumnCount(5);
+        reportTable->setHorizontalHeaderLabels({
+            "Полис ОМС", "Врач", "Диагноз", "Дата приёма", "ФИО пациента"
+        });
+    }
+
     tabWidget->setCurrentIndex(2);
+
+    // 🔽 СПРОСИМ, ХОЧЕТ ЛИ ПОЛЬЗОВАТЕЛЬ СОХРАНИТЬ ОТЧЁТ
+    QString savePath = QFileDialog::getSaveFileName(this,
+                                                    "Сохранить отчёт в файл", "", "Текстовые файлы (*.txt)");
+
+    if (!savePath.isEmpty()) {
+        QFile file(savePath);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&file);
+            // ⚠️ НЕ вызывай setCodec — в Qt6 это удалено
+
+            out << "=== ОТЧЁТ О ПРИЁМАХ ПАЦИЕНТОВ ===\n\n";
+            out << "Фильтры: \n";
+            out << "ФИО: " << fioText << "\n";
+            out << "Врач: " << doctorText << "\n";
+            out << "Дата: " << qdate.toString("dd.MM.yyyy") << "\n\n";
+
+            out << "Найдено записей: " << reportTable->rowCount() << "\n\n";
+
+            // Заголовки
+            for (int col = 0; col < reportTable->columnCount(); ++col) {
+                out << reportTable->horizontalHeaderItem(col)->text() << "\t";
+            }
+            out << "\n";
+
+            // Данные
+            for (int row = 0; row < reportTable->rowCount(); ++row) {
+                for (int col = 0; col < reportTable->columnCount(); ++col) {
+                    QTableWidgetItem* item = reportTable->item(row, col);
+                    out << (item ? item->text() : "") << "\t";
+                }
+                out << "\n";
+            }
+
+            file.close();
+            QMessageBox::information(this, "Отчёт сохранён",
+                                     "Отчёт успешно сохранён в файл:\n" + savePath);
+        } else {
+            QMessageBox::warning(this, "Ошибка",
+                                 "Не удалось сохранить файл отчёта.");
+        }
+    }
+
 }
+
+void MainWindow::showSplitSearchDialog() {
+    QDialog* dialog = new QDialog(this);
+    dialog->setWindowTitle("Раздельный поиск");
+    dialog->resize(800, 500);
+
+    QVBoxLayout* layout = new QVBoxLayout(dialog);
+
+    // Поле для поиска пациента
+    QLineEdit* policyEdit1 = new QLineEdit();
+    policyEdit1->setPlaceholderText("Полис ОМС для пациента");
+
+    QTableWidget* patientResult = new QTableWidget();
+    patientResult->setColumnCount(3);
+    patientResult->setHorizontalHeaderLabels({"ФИО", "Полис", "Дата рождения"});
+    patientResult->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
+    QPushButton* searchPatientBtn = new QPushButton("Найти пациента");
+    QObject::connect(searchPatientBtn, &QPushButton::clicked, this, [=, this]() {
+        patientResult->setRowCount(0);
+        std::string policy = policyEdit1->text().trimmed().toStdString();
+        const Patient* p = hashTable.get(policy);
+        if (!p) {
+            QMessageBox::warning(this, "Ошибка", "Пациент не найден.");
+            return;
+        }
+        patientResult->insertRow(0);
+        patientResult->setItem(0, 0, new QTableWidgetItem(QString::fromStdString(p->surname + " " + p->name + " " + p->middlename)));
+        patientResult->setItem(0, 1, new QTableWidgetItem(QString::fromStdString(policy)));
+        patientResult->setItem(0, 2, new QTableWidgetItem(formatDate(p->birthDate)));
+    });
+
+    // Поле для поиска приёмов
+    QLineEdit* policyEdit2 = new QLineEdit();
+    policyEdit2->setPlaceholderText("Полис ОМС для приёмов");
+
+    QTableWidget* appointmentResult = new QTableWidget();
+    appointmentResult->setColumnCount(4);
+    appointmentResult->setHorizontalHeaderLabels({"Диагноз", "Врач", "Дата приёма", "Индекс"});
+    appointmentResult->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+
+    QPushButton* searchAppointmentsBtn = new QPushButton("Найти приёмы");
+    QObject::connect(searchAppointmentsBtn, &QPushButton::clicked, this, [=, this]() {
+        appointmentResult->setRowCount(0);
+        std::string policy = policyEdit2->text().trimmed().toStdString();
+        avlTree.traverseByKey(policy, [&](std::size_t index) {
+            if (index >= AppointmentArray.Size()) return;
+            const Appointment& a = AppointmentArray[index];
+            int row = appointmentResult->rowCount();
+            appointmentResult->insertRow(row);
+            appointmentResult->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(a.diagnosis)));
+            appointmentResult->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(a.doctorType)));
+            appointmentResult->setItem(row, 2, new QTableWidgetItem(formatDate(a.appointmentDate)));
+            appointmentResult->setItem(row, 3, new QTableWidgetItem(QString::number(index)));
+        });
+    });
+
+    // Добавим в макет
+    layout->addWidget(policyEdit1);
+    layout->addWidget(searchPatientBtn);
+    layout->addWidget(patientResult);
+    layout->addSpacing(10);
+    layout->addWidget(policyEdit2);
+    layout->addWidget(searchAppointmentsBtn);
+    layout->addWidget(appointmentResult);
+
+    dialog->setLayout(layout);
+    dialog->exec();
+}
+
+
+
 
 void MainWindow::showDebugWindow() {
     // Базовая статистика

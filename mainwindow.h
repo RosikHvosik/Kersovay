@@ -13,7 +13,7 @@
 #include <QPushButton>
 #include <vector>
 #include <map>
-
+#include <QDateEdit>
 #include "hashtable.hpp"
 #include "array.h"
 #include "avltree3.hpp"
@@ -55,6 +55,7 @@ public:
     ~MainWindow();
 
 private slots:
+    void showSplitSearchDialog();
     void showIntegrityReport();
     void loadPatientsFromFile();
     void loadAppointmentsFromFile();
@@ -70,6 +71,9 @@ private:
     Ui::MainWindow *ui;
 
     // UI компоненты
+    QLineEdit* fioFilterEdit;
+    QLineEdit* doctorFilterEdit;
+    QDateEdit* dateFilterEdit;
     QTableWidget *avlTreeTableView;
     QToolBar *toolBar;
     QTabWidget *tabWidget;
@@ -88,6 +92,7 @@ private:
     QAction *deletePatientAction;
     QAction *deleteAppointmentAction;
     QAction *debugAction;
+    QAction* searchSplitAction;
     QAction *reportAction;
 
     // Структуры данных
