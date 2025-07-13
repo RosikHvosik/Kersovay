@@ -15,16 +15,16 @@ qt_add_executable(KYRSOVAYA
     mainwindow.cpp
     mainwindow.h
     mainwindow.ui
-    hashtabledialog.h hashtabledialog.cpp hashtabledialog.ui
-    avltreedialog.h avltreedialog.cpp avltreedialog.ui
+
+
     types.h
     hashtable.hpp
     array.h
     linkedlist.cpp
     linkedlist.h
-    avltree.hpp
-    avltree.cpp
-    avltree2.hpp
+
+
+
     avltree3.hpp
     PatientParser.h
     AppointmentParser.h
