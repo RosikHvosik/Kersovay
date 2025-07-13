@@ -8,19 +8,170 @@
 #include <QTextStream>
 #include <QInputDialog>
 #include <QStringList>
-#include "array.h"
-#include "hashtable.hpp"
-#include "avltree3.hpp"
-#include <algorithm>
-#include <cctype>
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QTextEdit>
 #include <QPushButton>
 #include <QFont>
+#include <QGraphicsEllipseItem>
+#include <QGraphicsTextItem>
+#include <QGraphicsLineItem>
+#include <QGraphicsSceneMouseEvent>
+#include <QToolTip>
+#include <QApplication>
+#include <QObject>
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <climits>
+#include <map>
+#include <functional>
+
+#include "array.h"
+#include "hashtable.hpp"
+#include "avltree3.hpp"
 #include "types.h"
+// В mainwindow.cpp замените класс TreeNodeItem на этот исправленный:
+
+// В mainwindow.cpp замените класс TreeNodeItem на этот исправленный:
+
+class TreeNodeItem : public QGraphicsEllipseItem
+{
+public:
+    TreeNodeItem(const QString& key, const std::vector<std::size_t>& indices,
+                 HashTable* hashTable, qreal x, qreal y, qreal width = 100, qreal height = 50)
+        : QGraphicsEllipseItem(x - width/2, y - height/2, width, height)
+        , m_key(key), m_indices(indices), m_hashTable(hashTable)
+    {
+        QColor nodeColor;
+        if (indices.size() == 1) {
+            nodeColor = QColor(144, 238, 144);
+        } else if (indices.size() <= 3) {
+            nodeColor = QColor(173, 216, 230);
+        } else {
+            nodeColor = QColor(255, 182, 193);
+        }
+
+        setBrush(QBrush(nodeColor));
+        setPen(QPen(QColor(70, 130, 180), 2));
+        setFlag(QGraphicsItem::ItemIsSelectable, true);
+        setFlag(QGraphicsItem::ItemIsFocusable, true);
+        setAcceptHoverEvents(true);  // КРИТИЧЕСКИ ВАЖНАЯ СТРОКА!
+
+        QString displayKey = key;
+        if (displayKey.length() > 12) {
+            displayKey = displayKey.left(4) + "..." + displayKey.right(4);
+        }
+
+        QString nodeText = QString("%1\n(%2)").arg(displayKey).arg(indices.size());
+        m_textItem = new QGraphicsTextItem(nodeText, this);
+
+        QRectF textRect = m_textItem->boundingRect();
+        m_textItem->setPos(-textRect.width()/2, -textRect.height()/2);
+        m_textItem->setDefaultTextColor(QColor(0, 0, 139));
+
+        QFont font = m_textItem->font();
+        font.setBold(true);
+        font.setPointSize(8);
+        m_textItem->setFont(font);
+
+        updateTooltip();
+    }
+
+    void updateTooltip() {
+        QString tooltip = QString("Полис: %1\nКоличество приёмов: %2\n\nПриёмы:\n")
+                              .arg(m_key).arg(m_indices.size());
+
+        if (m_hashTable) {
+            const Patient* patient = m_hashTable->get(m_key.toStdString());
+            if (patient) {
+                tooltip += QString("Пациент: %1 %2 %3\n")
+                               .arg(QString::fromStdString(patient->surname))
+                               .arg(QString::fromStdString(patient->name))
+                               .arg(QString::fromStdString(patient->middlename));
+                tooltip += QString("Дата рождения: %1.%2.%3\n\n")
+                               .arg(patient->birthDate.day, 2, 10, QChar('0'))
+                               .arg(static_cast<int>(patient->birthDate.month), 2, 10, QChar('0'))
+                               .arg(patient->birthDate.year);
+            }
+        }
+
+        for (size_t i = 0; i < m_indices.size() && i < 5; ++i) {
+            if (m_indices[i] < AppointmentArray.Size()) {
+                const Appointment& app = AppointmentArray[m_indices[i]];
+                tooltip += QString("%1. %2 - %3 (%4.%5.%6)\n")
+                               .arg(i + 1)
+                               .arg(QString::fromStdString(app.doctorType))
+                               .arg(QString::fromStdString(app.diagnosis))
+                               .arg(app.appointmentDate.day, 2, 10, QChar('0'))
+                               .arg(static_cast<int>(app.appointmentDate.month), 2, 10, QChar('0'))
+                               .arg(app.appointmentDate.year);
+            }
+        }
+
+        if (m_indices.size() > 5) {
+            tooltip += QString("... и ещё %1 приёмов").arg(m_indices.size() - 5);
+        }
+
+        setToolTip(tooltip);
+    }
+
+protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            QString details = QString("=== ПОДРОБНАЯ ИНФОРМАЦИЯ ===\n\n");
+            details += QString("Полис ОМС: %1\n").arg(m_key);
+            details += QString("Количество приёмов: %1\n\n").arg(m_indices.size());
+
+            // Показываем в диалоге
+            QDialog* dialog = new QDialog();
+            dialog->setWindowTitle(QString("Узел дерева: %1").arg(m_key));
+            dialog->resize(500, 400);
+
+            QVBoxLayout* layout = new QVBoxLayout(dialog);
+            QTextEdit* textEdit = new QTextEdit(dialog);
+            textEdit->setPlainText(details);
+            textEdit->setReadOnly(true);
+
+            QPushButton* closeBtn = new QPushButton("Закрыть", dialog);
+            QObject::connect(closeBtn, &QPushButton::clicked, dialog, &QDialog::accept);
+
+            layout->addWidget(textEdit);
+            layout->addWidget(closeBtn);
+
+            dialog->exec();
+            dialog->deleteLater();
+        }
+        QGraphicsEllipseItem::mousePressEvent(event);
+    }
+
+    void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override {
+        setBrush(QBrush(QColor(255, 223, 186)));
+        setPen(QPen(QColor(255, 140, 0), 3));
+        QGraphicsEllipseItem::hoverEnterEvent(event);
+    }
+
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override {
+        QColor nodeColor;
+        if (m_indices.size() == 1) {
+            nodeColor = QColor(144, 238, 144);
+        } else if (m_indices.size() <= 3) {
+            nodeColor = QColor(173, 216, 230);
+        } else {
+            nodeColor = QColor(255, 182, 193);
+        }
+        setBrush(QBrush(nodeColor));
+        setPen(QPen(QColor(70, 130, 180), 2));
+        QGraphicsEllipseItem::hoverLeaveEvent(event);
+    }
+
+private:
+    QString m_key;
+    std::vector<std::size_t> m_indices;
+    HashTable* m_hashTable;
+    QGraphicsTextItem* m_textItem;
+};
+
 using StatusEnum = Status;
 extern Array<Patient, 1000> PatientArray;
 extern Array<Appointment, 1000> AppointmentArray;
@@ -52,14 +203,15 @@ QString MainWindow::formatDate(const Date& date) {
         .arg(date.year);
 }
 
+// В mainwindow.cpp исправьте конструктор MainWindow:
+
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , ui(new Ui::MainWindow)
+    : QMainWindow(parent), ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
     setupUI();
+    setupTreeVisualization();  // ЭТОТ МЕТОД ДОЛЖЕН СУЩЕСТВОВАТЬ!
 
-    // Подключаем сигналы
     connect(loadPatientsAction, &QAction::triggered, this, &MainWindow::loadPatientsFromFile);
     connect(loadAppointmentsAction, &QAction::triggered, this, &MainWindow::loadAppointmentsFromFile);
     connect(addPatientAction, &QAction::triggered, this, &MainWindow::addPatient);
@@ -68,10 +220,15 @@ MainWindow::MainWindow(QWidget *parent)
     connect(deleteAppointmentAction, &QAction::triggered, this, &MainWindow::deleteAppointment);
     connect(reportAction, &QAction::triggered, this, &MainWindow::generateReport);
     connect(debugAction, &QAction::triggered, this, &MainWindow::showDebugWindow);
+
     QAction* integrityAction = new QAction("Проверка целостности", this);
     connect(integrityAction, &QAction::triggered, this, &MainWindow::showIntegrityReport);
     toolBar->addSeparator();
     toolBar->addAction(integrityAction);
+
+    QAction* updateTreeAction = new QAction("Обновить дерево", this);
+    connect(updateTreeAction, &QAction::triggered, this, &MainWindow::updateTreeVisualization);
+    toolBar->addAction(updateTreeAction);
 }
 
 MainWindow::~MainWindow()
@@ -84,6 +241,20 @@ void MainWindow::setupUI()
     createToolBar();
     createTabs();
 }
+
+void MainWindow::setupTreeVisualization() {
+    treeGraphicsView->setMouseTracking(true);
+    treeGraphicsView->setRenderHint(QPainter::Antialiasing);
+    treeGraphicsView->setDragMode(QGraphicsView::ScrollHandDrag);
+    treeGraphicsView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    treeGraphicsView->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    treeScene->setSceneRect(-500, -100, 1000, 800);
+    treeScene->setBackgroundBrush(QBrush(QColor(248, 248, 255)));
+}
+
+// В mainwindow.cpp найдите метод createTabs() и измените его так:
+
+// В mainwindow.cpp замените метод createTabs:
 
 void MainWindow::createTabs() {
     tabWidget = new QTabWidget(this);
@@ -133,10 +304,52 @@ void MainWindow::createTabs() {
     tabWidget->addTab(appointmentTable, "Приемы");
     tabWidget->addTab(reportTable, "Отчёт");
     tabWidget->addTab(hashTableView, "Хэш таблица");
-    tabWidget->addTab(avlTreeTableView, "AVL-дерево (таблица)");  // ← НОВАЯ ВКЛАДКА
+    tabWidget->addTab(avlTreeTableView, "AVL-дерево (таблица)");
     tabWidget->addTab(treeGraphicsView, "Дерево (граф)");
 }
 
+// Также исправьте метод updateAllTables - уберите дублирование:
+/*void MainWindow::updateAllTables() {
+    updatePatientTable();
+    updateAppointmentTable();
+    updateHashTableView();
+    updateAVLTreeTableView();
+    updateTreeVisualization();  // Вызываем обновление визуализации
+}
+*/
+
+// АЛЬТЕРНАТИВНО, если хотите добавить это в отдельный метод,
+// создайте новый метод setupTreeVisualization() и вызовите его из конструктора:
+
+/*void MainWindow::setupTreeVisualization() {
+    // Настройка графического представления дерева
+    treeGraphicsView->setMouseTracking(true);
+    treeGraphicsView->setRenderHint(QPainter::Antialiasing);
+    treeGraphicsView->setDragMode(QGraphicsView::ScrollHandDrag);  // Возможность перетаскивания
+    treeGraphicsView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    treeGraphicsView->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+    // Устанавливаем размер сцены
+    treeScene->setSceneRect(-500, -100, 1000, 800);
+
+    // Цвет фона сцены
+    treeScene->setBackgroundBrush(QBrush(QColor(248, 248, 255))); // Очень светло-голубой фон
+}
+*/
+// Тогда в конструкторе MainWindow добавьте вызов:
+/*MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+    , ui(new Ui::MainWindow)
+{
+    ui->setupUi(this);
+    setupUI();
+    setupTreeVisualization();  // ДОБАВЬТЕ ЭТУ СТРОКУ
+
+    // Подключаем сигналы
+    connect(loadPatientsAction, &QAction::triggered, this, &MainWindow::loadPatientsFromFile);
+    // ... остальные connections ...
+}
+*/
 void MainWindow::createToolBar()
 {
     toolBar = addToolBar("Main Toolbar");
@@ -163,49 +376,6 @@ void MainWindow::createToolBar()
     toolBar->addAction(reportAction);
 }
 
-/*void MainWindow::createTabs() {
-    tabWidget = new QTabWidget(this);
-    setCentralWidget(tabWidget);
-
-    // Вкладка: Пациенты
-    patientTable = new QTableWidget(this);
-    patientTable->setColumnCount(3);
-    patientTable->setHorizontalHeaderLabels({"ФИО", "Полис ОМС", "Дата рождения"});
-    patientTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-
-    // Вкладка: Приемы
-    appointmentTable = new QTableWidget(this);
-    appointmentTable->setColumnCount(4);
-    appointmentTable->setHorizontalHeaderLabels({"Полис ОМС", "Диагноз", "Врач", "Дата приёма"});
-    appointmentTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-
-    // Вкладка: Отчёт
-    reportTable = new QTableWidget(this);
-    reportTable->setColumnCount(4);
-    reportTable->setHorizontalHeaderLabels({"Полис ОМС", "Врач", "Диагноз", "Дата приёма"});
-    reportTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-
-    // Вкладка: Хэш таблица
-    hashTableView = new QTableWidget(this);
-    hashTableView->setColumnCount(7);
-    hashTableView->setHorizontalHeaderLabels({
-        "Индекс", "Хэш", "Статус", "Ключ", "ФИО", "Дата рождения", "Индекс в массиве"
-    });
-    hashTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-
-    // Вкладка: Визуализация дерева
-    treeGraphicsView = new QGraphicsView(this);
-    treeScene = new QGraphicsScene(this);
-    treeGraphicsView->setScene(treeScene);
-
-    // Добавляем вкладки
-    tabWidget->addTab(patientTable, "Пациенты");
-    tabWidget->addTab(appointmentTable, "Приемы");
-    tabWidget->addTab(reportTable, "Отчёт");
-    tabWidget->addTab(hashTableView, "Хэш таблица");
-    tabWidget->addTab(treeGraphicsView, "Дерево");
-}
-*/
 void MainWindow::loadPatientsFromFile() {
     QString filename = QFileDialog::getOpenFileName(this,
                                                     "Загрузить файл пациентов", "", "Text Files (*.txt)");
@@ -459,6 +629,11 @@ void MainWindow::updateAllTables() {
     updateHashTableView();
     updateTreeView();
     updateAVLTreeTableView();
+    updatePatientTable();
+    updateAppointmentTable();
+    updateHashTableView();
+    updateAVLTreeTableView();
+    updateTreeVisualization();
 }
 
 void MainWindow::addPatient() {
@@ -1079,6 +1254,113 @@ void MainWindow::deleteAllAppointmentsForPatient(const std::string& policy) {
         qDebug().noquote() << "→ Приёмы с данным полисом не найдены";
     }
 }
+
+
+void MainWindow::updateTreeVisualization()
+{
+    qDebug().noquote() << "[updateTreeVisualization] Начинаем обновление визуализации дерева";
+    clearTreeVisualization();
+    drawTree();
+}
+
+void MainWindow::clearTreeVisualization()
+{
+    treeScene->clear();
+    treeNodes.clear();
+}
+
+void MainWindow::drawTree()
+{
+    auto root = avlTree.getRoot();
+    if (!root) {
+        // Если дерево пустое, показываем сообщение
+        QGraphicsTextItem* emptyText = treeScene->addText("Дерево пустое", QFont("Arial", 16));
+        emptyText->setPos(-100, -20);
+        emptyText->setDefaultTextColor(QColor(128, 128, 128));
+        return;
+    }
+
+    // Вычисляем размеры дерева для правильного позиционирования
+    int treeHeight = calculateTreeHeight(root);
+    int treeWidth = calculateTreeWidth(root);
+
+    // Настраиваем размер сцены
+    int sceneWidth = std::max(800, treeWidth * 120);
+    int sceneHeight = std::max(600, treeHeight * 100);
+    treeScene->setSceneRect(-sceneWidth/2, -50, sceneWidth, sceneHeight);
+
+    // Рисуем дерево рекурсивно
+    drawNode(root, 0, 80, sceneWidth * 0.3, 1);
+
+    qDebug().noquote() << QString("[drawTree] Нарисовано узлов: %1").arg(treeNodes.size());
+}
+
+// Вспомогательные методы для расчета размеров дерева:
+int MainWindow::calculateTreeHeight(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* node)
+{
+    if (!node) return 0;
+    return 1 + std::max(calculateTreeHeight(node->left), calculateTreeHeight(node->right));
+}
+
+int MainWindow::calculateTreeWidth(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* node)
+{
+    if (!node) return 0;
+    return 1 + calculateTreeWidth(node->left) + calculateTreeWidth(node->right);
+}
+
+void MainWindow::drawNode(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* node,
+                          qreal x, qreal y, qreal horizontalSpacing, int level)
+{
+    if (!node) return;
+
+    // Собираем индексы из связанного списка
+    std::vector<std::size_t> indices;
+    lNode* current = node->indexList.getHead();
+    if (current) {
+        do {
+            indices.push_back(current->arrayIndex);
+            current = current->next;
+        } while (current != node->indexList.getHead());
+    }
+
+    // Создаем визуальный узел
+    QString keyText = QString::fromStdString(node->key);
+
+    // Укорачиваем полис для отображения (показываем только последние 4 цифры)
+    if (keyText.length() > 8) {
+        keyText = "..." + keyText.right(4);
+    }
+
+    TreeNodeItem* nodeItem = new TreeNodeItem(QString::fromStdString(node->key), indices, &hashTable, x, y);
+    treeScene->addItem(nodeItem);
+    treeNodes.push_back(nodeItem);
+
+    // Рисуем связи с дочерними узлами
+    qreal childSpacing = horizontalSpacing / 2;
+    qreal childY = y + 100;
+
+    if (node->left) {
+        qreal leftX = x - horizontalSpacing;
+
+        // Линия к левому потомку
+        QGraphicsLineItem* leftLine = treeScene->addLine(x, y + 20, leftX, childY - 20,
+                                                         QPen(QColor(100, 100, 100), 2));
+
+        drawNode(node->left, leftX, childY, childSpacing, level + 1);
+    }
+
+    if (node->right) {
+        qreal rightX = x + horizontalSpacing;
+
+        // Линия к правому потомку
+        QGraphicsLineItem* rightLine = treeScene->addLine(x, y + 20, rightX, childY - 20,
+                                                          QPen(QColor(100, 100, 100), 2));
+
+        drawNode(node->right, rightX, childY, childSpacing, level + 1);
+    }
+}
+
+
 void MainWindow::showIntegrityReport() {
     generateIntegrityReport();
 }

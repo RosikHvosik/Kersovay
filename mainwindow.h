@@ -1,6 +1,19 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QGraphicsEllipseItem>
+#include <QGraphicsTextItem>
+#include <QGraphicsLineItem>
+#include <QGraphicsSceneMouseEvent>
+#include <QToolTip>
+#include <QApplication>
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QTextEdit>
+#include <QPushButton>
+#include <vector>
+#include <map>
+
 #include "hashtable.hpp"
 #include "array.h"
 #include "avltree3.hpp"
@@ -29,6 +42,11 @@ extern Array<Appointment, 1000> AppointmentArray;
 
 Month monthFromShortString(const QString& shortMonth);
 
+// Предварительные объявления
+class TreeNodeItem;
+template<typename KeyType, typename T, typename ArrayType>
+struct AVLNode;
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -50,6 +68,7 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
+
     // UI компоненты
     QTableWidget *avlTreeTableView;
     QToolBar *toolBar;
@@ -75,12 +94,13 @@ private:
     HashTable hashTable;
     AVLTree<std::string, Appointment, Array<Appointment, 1000>> avlTree;
     std::vector<std::string> appointmentPolicies; // Для связи приёмов с полисами
+    std::vector<TreeNodeItem*> treeNodes; // Убрана дублированная объявление
 
     // Вспомогательные методы
     void checkReferentialIntegrity();
     void generateIntegrityReport();
-
     void setupUI();
+    void setupTreeVisualization(); // Добавлен метод
     void createToolBar();
     void createTabs();
     void updatePatientTable();
@@ -89,12 +109,21 @@ private:
     void updateTreeView();
     void updateAVLTreeTableView();
 
+    // Методы визуализации дерева
+    void updateTreeVisualization();
+    void drawTree();
+    void clearTreeVisualization();
+    int calculateTreeHeight(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* node);
+    int calculateTreeWidth(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* node);
+    void drawNode(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* node,
+                  qreal x, qreal y, qreal horizontalSpacing, int level);
+
     QString formatDate(const Date& date);
-    //методы с 9 утра
+
+    // Методы валидации и проверки
     bool patientExists(const std::string& policy) const;
     void deleteAllAppointmentsForPatient(const std::string& policy);
     bool validateAppointmentData(const std::string& policy, const Appointment& appointment);
-    //выше методы с 9 утра
     bool parsePatientLine(const QString& line, std::string& policy, Patient& patient);
     bool parseAppointmentLine(const QString& line, std::string& policy, Appointment& appointment);
     bool isValidPolicy(const std::string& policy) const;
