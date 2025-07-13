@@ -32,8 +32,38 @@
 #include "avltree3.hpp"
 #include "types.h"
 // В mainwindow.cpp замените класс TreeNodeItem на этот исправленный:
+bool isValidStringField(const std::string& input) {
+    if (input.length() < 2)
+        return false;
 
+    for (char c : input) {
+        if (!std::isalpha(static_cast<unsigned char>(c)))
+            return false;
+    }
+
+    return true;
+}
 // В mainwindow.cpp замените класс TreeNodeItem на этот исправленный:
+bool isValidDate(const Date& date) {
+    int maxDays = 31;
+
+    switch (date.month) {
+    case Month::апр:
+    case Month::июн:
+    case Month::сен:
+    case Month::ноя:
+        maxDays = 30;
+        break;
+    case Month::фев:
+        maxDays = 29; // без високосных годов
+        break;
+    default:
+        maxDays = 31;
+    }
+
+    return date.day >= 1 && date.day <= maxDays &&
+           date.year >= 1900 && date.year <= 2100;
+}
 
 class TreeNodeItem : public QGraphicsEllipseItem
 {
@@ -151,6 +181,8 @@ protected:
         QGraphicsEllipseItem::hoverEnterEvent(event);
     }
 
+
+
     void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override {
         QColor nodeColor;
         if (m_indices.size() == 1) {
@@ -246,12 +278,17 @@ void MainWindow::setupUI()
 void MainWindow::setupTreeVisualization() {
     treeGraphicsView->setMouseTracking(true);
     treeGraphicsView->setRenderHint(QPainter::Antialiasing);
-    treeGraphicsView->setDragMode(QGraphicsView::ScrollHandDrag);
+    treeGraphicsView->setDragMode(QGraphicsView::ScrollHandDrag);  // перетаскивание мышкой
     treeGraphicsView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     treeGraphicsView->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    treeScene->setSceneRect(-500, -100, 1000, 800);
-    treeScene->setBackgroundBrush(QBrush(QColor(248, 248, 255)));
+
+    // Увеличенная сцена: 10 000 x 5 000
+    treeScene->setSceneRect(-5000, -2500, 10000, 5000);
+
+    treeScene->setBackgroundBrush(QBrush(QColor(248, 248, 255))); // светло-серый фон
 }
+
+
 
 
 void MainWindow::createTabs() {
@@ -629,8 +666,14 @@ void MainWindow::updateHashTableView() {
         }
 
         // Статус
-        QString status = (record.getStatus() == ::Status::Empty) ? "Empty" : "Active";
+        QString status;
+        switch (record.getStatus()) {
+        case Status::Empty:   status = "Empty"; break;
+        case Status::Active:  status = "Active"; break;
+        case Status::Deleted: status = "Deleted"; break;
+        }
         hashTableView->setItem(i, 2, new QTableWidgetItem(status));
+
 
         // Ключ (полис)
         hashTableView->setItem(i, 3, new QTableWidgetItem(QString::fromStdString(record.getKey())));
@@ -709,6 +752,15 @@ void MainWindow::addPatient() {
                                                "Введите отчество:",
                                                QLineEdit::Normal, "", &ok);
     if (!ok || middlename.isEmpty()) return;
+
+    if (!isValidStringField(surname.toStdString()) ||
+        !isValidStringField(name.toStdString()) ||
+        !isValidStringField(middlename.toStdString())) {
+        QMessageBox::warning(this, "Ошибка валидации",
+                             "Фамилия, имя и отчество должны содержать минимум 2 буквы и не содержать цифр или других символов.");
+        return;
+    }
+
 
     // Ввод даты рождения
     int day = QInputDialog::getInt(this, "Добавление пациента", "День рождения:", 1, 1, 31, 1, &ok);
@@ -1220,20 +1272,43 @@ bool MainWindow::validateAppointmentData(const std::string& policy, const Appoin
     }
 
     // Дополнительные проверки данных приёма
-    if (appointment.doctorType.empty() || appointment.diagnosis.empty()) {
+    if (!isValidStringField(appointment.doctorType) || !isValidStringField(appointment.diagnosis)) {
         QMessageBox::warning(this, "Ошибка валидации",
-                             "Тип врача и диагноз не могут быть пустыми!");
+                             "Тип врача и диагноз должны содержать минимум 2 буквы и не содержать цифр или других символов!");
         return false;
     }
 
-    if (appointment.appointmentDate.day < 1 || appointment.appointmentDate.day > 31 ||
-        appointment.appointmentDate.year < 1900 || appointment.appointmentDate.year > 2100) {
+
+    if (!isValidDate(appointment.appointmentDate)) {
         QMessageBox::warning(this, "Ошибка валидации",
-                             "Некорректная дата приёма!");
+                             "Некорректная дата приёма для выбранного месяца!");
         return false;
     }
+
+    // Проверка: нельзя два приёма к одному врачу в один день
+    bool duplicate = false;
+    avlTree.traverseByKey(policy, [&](std::size_t index) {
+        if (index >= AppointmentArray.Size()) return;
+
+        const Appointment& existing = AppointmentArray[index];
+
+        if (existing.doctorType == appointment.doctorType &&
+            existing.appointmentDate == appointment.appointmentDate) {
+            duplicate = true;
+        }
+    });
+
+    if (duplicate) {
+        QMessageBox::warning(nullptr, "Ошибка валидации",
+                             "Пациент уже записан к этому врачу в указанную дату.");
+        return false;
+    }
+
+
 
     return true;
+
+
 }
 void MainWindow::checkReferentialIntegrity() {
     qDebug().noquote() << "=== ПРОВЕРКА РЕФЕРЕНЦИАЛЬНОЙ ЦЕЛОСТНОСТИ ===";
@@ -1454,6 +1529,8 @@ void MainWindow::updateTreeVisualization()
     qDebug().noquote() << "[updateTreeVisualization] Начинаем обновление визуализации дерева";
     clearTreeVisualization();
     drawTree();
+    treeGraphicsView->centerOn(0, 0); // Центрируем на середине сцены
+
 }
 
 void MainWindow::clearTreeVisualization()

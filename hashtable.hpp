@@ -271,6 +271,7 @@ public:
 
         PatientArray.Remove(m_table[pos].arrayIndex, *this);
         m_table[pos].status = Status::Deleted; // Помечаем как удаленное, а не Empty
+        m_table[pos].key = 0;
         --m_count;
 
         return true;
