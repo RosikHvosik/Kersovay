@@ -31,6 +31,227 @@
 #include "hashtable.hpp"
 #include "avltree3.hpp"
 #include "types.h"
+
+
+
+extern Array<Patient, 1000> PatientArray;
+extern Array<Appointment, 1000> AppointmentArray;
+
+// Глобальная переменная для доступа к MainWindow из DateTreeNodeItem
+static MainWindow* g_mainWindow = nullptr;
+
+class DateTreeNodeItem : public QGraphicsEllipseItem
+{
+public:
+    DateTreeNodeItem(const QString& dateDisplay, const QString& dateKey,
+                     const std::vector<std::size_t>& indices,
+                     HashTable* hashTable, qreal x, qreal y, qreal width = 140, qreal height = 70)
+        : QGraphicsEllipseItem(x - width/2, y - height/2, width, height)
+        , m_dateDisplay(dateDisplay), m_dateKey(dateKey), m_indices(indices), m_hashTable(hashTable)
+    {
+        // Цвет узла зависит от количества приёмов
+        QColor nodeColor;
+        if (indices.size() == 1) {
+            nodeColor = QColor(144, 238, 144);      // Светло-зеленый
+        } else if (indices.size() <= 3) {
+            nodeColor = QColor(173, 216, 230);      // Светло-голубой
+        } else if (indices.size() <= 5) {
+            nodeColor = QColor(255, 218, 185);      // Персиковый
+        } else {
+            nodeColor = QColor(255, 182, 193);      // Светло-розовый
+        }
+
+        setBrush(QBrush(nodeColor));
+        setPen(QPen(QColor(70, 130, 180), 2));
+        setFlag(QGraphicsItem::ItemIsSelectable, true);
+        setAcceptHoverEvents(true);
+
+        QString nodeText = QString("%1\n(%2 приёмов)")
+                               .arg(dateDisplay)
+                               .arg(indices.size());
+        m_textItem = new QGraphicsTextItem(nodeText, this);
+
+        QRectF textRect = m_textItem->boundingRect();
+        m_textItem->setPos(-textRect.width()/2, -textRect.height()/2);
+        m_textItem->setDefaultTextColor(QColor(0, 0, 139));
+
+        QFont font = m_textItem->font();
+        font.setBold(true);
+        font.setPointSize(8);
+        m_textItem->setFont(font);
+
+        updateTooltip();
+    }
+
+    void updateTooltip() {
+        QString tooltip = QString("🗓️ ДАТА: %1\n").arg(m_dateDisplay);
+        tooltip += QString(" Ключ: %1\n").arg(m_dateKey);
+        tooltip += QString(" Приёмов: %2\n").arg(m_indices.size());
+        tooltip += QString(" Индексы: [");
+
+        // Показываем первые несколько индексов
+        for (size_t i = 0; i < m_indices.size() && i < 10; ++i) {
+            if (i > 0) tooltip += ", ";
+            tooltip += QString::number(m_indices[i]);
+        }
+        if (m_indices.size() > 10) {
+            tooltip += QString(", ... ещё %1").arg(m_indices.size() - 10);
+        }
+        tooltip += "]\n\n";
+
+        tooltip += "🏥 ПРИЁМЫ:\n";
+        for (size_t i = 0; i < m_indices.size() && i < 7; ++i) {
+            std::size_t idx = m_indices[i];
+            if (idx < AppointmentArray.Size()) {
+                const Appointment& app = AppointmentArray[idx];
+
+                // ИСПРАВЛЕНИЕ: Получаем полис через глобальную переменную
+                QString policy = "НЕТ_ПОЛИСА";
+                if (g_mainWindow && idx < g_mainWindow->appointmentPolicies.size()) {
+                    policy = QString::fromStdString(g_mainWindow->appointmentPolicies[idx]);
+
+                    // Сокращаем полис для отображения
+                    if (policy.length() > 8) {
+                        policy = "..." + policy.right(4);
+                    }
+                }
+
+                tooltip += QString("%1. [%2] %3 → %4 (полис: %5)\n")
+                               .arg(i + 1)
+                               .arg(idx)
+                               .arg(QString::fromStdString(app.doctorType))
+                               .arg(QString::fromStdString(app.diagnosis))
+                               .arg(policy);
+            } else {
+                tooltip += QString("%1. [%2]  ОШИБКА: индекс вне массива!\n")
+                               .arg(i + 1).arg(idx);
+            }
+        }
+
+        if (m_indices.size() > 7) {
+            tooltip += QString("... и ещё %1 приёмов").arg(m_indices.size() - 7);
+        }
+
+        setToolTip(tooltip);
+    }
+
+protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            // Создаем детальное окно с отладочной информацией
+            QString details = QString("️ ПОДРОБНАЯ ИНФОРМАЦИЯ О ДАТЕ %1\n\n").arg(m_dateDisplay);
+            details += QString("Ключ в дереве: %1\n").arg(m_dateKey);
+            details += QString("Общее количество приёмов: %1\n").arg(m_indices.size());
+            details += QString("Все индексы: [");
+
+            for (size_t i = 0; i < m_indices.size(); ++i) {
+                if (i > 0) details += ", ";
+                details += QString::number(m_indices[i]);
+            }
+            details += "]\n\n";
+
+            details += "ВСЕ ПРИЁМЫ НА ЭТУ ДАТУ:\n";
+            details += QString(80, '=') + "\n";
+
+
+            for (size_t i = 0; i < m_indices.size(); ++i) {
+                std::size_t idx = m_indices[i];
+                details += QString("\n%1. ПРИЁМ [индекс %2]:\n").arg(i + 1).arg(idx);
+
+                if (idx < AppointmentArray.Size()) {
+                    const Appointment& app = AppointmentArray[idx];
+
+                    details += QString(" Врач: %1\n").arg(QString::fromStdString(app.doctorType));
+                    details += QString(" Диагноз: %1\n").arg(QString::fromStdString(app.diagnosis));
+                    details += QString(" Дата: %1.%2.%3\n")
+                                   .arg(app.appointmentDate.day, 2, 10, QChar('0'))
+                                   .arg(static_cast<int>(app.appointmentDate.month), 2, 10, QChar('0'))
+                                   .arg(app.appointmentDate.year);
+
+                    // ИСПРАВЛЕНИЕ: Ищем полис через глобальную переменную
+                    if (g_mainWindow && idx < g_mainWindow->appointmentPolicies.size()) {
+                        QString policy = QString::fromStdString(g_mainWindow->appointmentPolicies[idx]);
+                        details += QString("Полис ОМС: %1\n").arg(policy);
+
+                        // Ищем пациента
+                        if (m_hashTable) {
+                            const Patient* patient = m_hashTable->get(policy.toStdString());
+                            if (patient) {
+                                details += QString("   👤 Пациент: %1 %2 %3\n")
+                                               .arg(QString::fromStdString(patient->surname))
+                                               .arg(QString::fromStdString(patient->name))
+                                               .arg(QString::fromStdString(patient->middlename));
+                            } else {
+                                details += "   Пациент не найден в справочнике!\n";
+                            }
+                        }
+                    } else {
+                        details += "   Полис не найден в индексах!\n";
+                    }
+                } else {
+                    details += "    КРИТИЧЕСКАЯ ОШИБКА: индекс вне массива приёмов!\n";
+                }
+
+                details += QString(40, '-')
+ + "\n";
+            }
+
+            // Показываем в диалоге
+            QDialog* dialog = new QDialog();
+            dialog->setWindowTitle(QString("Узел дерева дат: %1").arg(m_dateDisplay));
+            dialog->resize(700, 500);
+
+            QVBoxLayout* layout = new QVBoxLayout(dialog);
+            QTextEdit* textEdit = new QTextEdit(dialog);
+            textEdit->setPlainText(details);
+            textEdit->setReadOnly(true);
+            textEdit->setFont(QFont("Courier", 9));
+
+            QPushButton* closeBtn = new QPushButton("Закрыть", dialog);
+            QObject::connect(closeBtn, &QPushButton::clicked, dialog, &QDialog::accept);
+
+            layout->addWidget(textEdit);
+            layout->addWidget(closeBtn);
+
+            dialog->exec();
+            dialog->deleteLater();
+        }
+        QGraphicsEllipseItem::mousePressEvent(event);
+    }
+
+    void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override {
+        setBrush(QBrush(QColor(255, 223, 186)));
+        setPen(QPen(QColor(255, 140, 0), 3));
+
+        // Обновляем tooltip при наведении (на случай изменения данных)
+        updateTooltip();
+
+        QGraphicsEllipseItem::hoverEnterEvent(event);
+    }
+
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override {
+        QColor nodeColor;
+        if (m_indices.size() == 1) {
+            nodeColor = QColor(144, 238, 144);
+        } else if (m_indices.size() <= 3) {
+            nodeColor = QColor(173, 216, 230);
+        } else if (m_indices.size() <= 5) {
+            nodeColor = QColor(255, 218, 185);
+        } else {
+            nodeColor = QColor(255, 182, 193);
+        }
+        setBrush(QBrush(nodeColor));
+        setPen(QPen(QColor(70, 130, 180), 2));
+        QGraphicsEllipseItem::hoverLeaveEvent(event);
+    }
+
+private:
+    QString m_dateDisplay;
+    QString m_dateKey;
+    std::vector<std::size_t> m_indices;
+    HashTable* m_hashTable;
+    QGraphicsTextItem* m_textItem;
+};
 // В mainwindow.cpp замените класс TreeNodeItem на этот исправленный:
 bool isValidStringField(const std::string& input) {
     if (input.length() < 2)
@@ -64,7 +285,6 @@ bool isValidDate(const Date& date) {
     return date.day >= 1 && date.day <= maxDays &&
            date.year >= 1900 && date.year <= 2100;
 }
-
 class TreeNodeItem : public QGraphicsEllipseItem
 {
 public:
@@ -86,7 +306,7 @@ public:
         setPen(QPen(QColor(70, 130, 180), 2));
         setFlag(QGraphicsItem::ItemIsSelectable, true);
         setFlag(QGraphicsItem::ItemIsFocusable, true);
-        setAcceptHoverEvents(true);  // КРИТИЧЕСКИ ВАЖНАЯ СТРОКА!
+        setAcceptHoverEvents(true);
 
         QString displayKey = key;
         if (displayKey.length() > 12) {
@@ -153,7 +373,6 @@ protected:
             details += QString("Полис ОМС: %1\n").arg(m_key);
             details += QString("Количество приёмов: %1\n\n").arg(m_indices.size());
 
-            // Показываем в диалоге
             QDialog* dialog = new QDialog();
             dialog->setWindowTitle(QString("Узел дерева: %1").arg(m_key));
             dialog->resize(500, 400);
@@ -181,8 +400,6 @@ protected:
         QGraphicsEllipseItem::hoverEnterEvent(event);
     }
 
-
-
     void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override {
         QColor nodeColor;
         if (m_indices.size() == 1) {
@@ -204,9 +421,8 @@ private:
     QGraphicsTextItem* m_textItem;
 };
 
+
 using StatusEnum = Status;
-extern Array<Patient, 1000> PatientArray;
-extern Array<Appointment, 1000> AppointmentArray;
 
 Month monthFromShortString(const QString& shortMonth) {
     if (shortMonth == "янв") return Month::янв;
@@ -242,8 +458,12 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
     setupUI();
-    setupTreeVisualization();  // ЭТОТ МЕТОД ДОЛЖЕН СУЩЕСТВОВАТЬ!
+    setupTreeVisualization();
 
+    // ИСПРАВЛЕНИЕ: Устанавливаем дерево дат по умолчанию
+    currentTreeType = CurrentTreeType::DateTree;
+
+    // Подключаем сигналы
     connect(loadPatientsAction, &QAction::triggered, this, &MainWindow::loadPatientsFromFile);
     connect(loadAppointmentsAction, &QAction::triggered, this, &MainWindow::loadAppointmentsFromFile);
     connect(addPatientAction, &QAction::triggered, this, &MainWindow::addPatient);
@@ -253,15 +473,17 @@ MainWindow::MainWindow(QWidget *parent)
     connect(reportAction, &QAction::triggered, this, &MainWindow::generateReport);
     connect(debugAction, &QAction::triggered, this, &MainWindow::showDebugWindow);
 
-
     QAction* integrityAction = new QAction("Проверка целостности", this);
     connect(integrityAction, &QAction::triggered, this, &MainWindow::showIntegrityReport);
     toolBar->addSeparator();
     toolBar->addAction(integrityAction);
 
-    QAction* updateTreeAction = new QAction("Обновить дерево", this);
-    connect(updateTreeAction, &QAction::triggered, this, &MainWindow::updateTreeVisualization);
-    toolBar->addAction(updateTreeAction);
+    // ИСПРАВЛЕНИЕ: Правильное состояние кнопок
+    showPolicyTreeAction->setEnabled(true);
+    showDateTreeAction->setEnabled(false);  // Дерево дат активно по умолчанию
+
+    // ДОБАВЛЯЕМ: Показываем сообщение о пустом дереве при запуске
+    showEmptyTreeMessage("Загрузите приёмы для построения дерева дат");
 }
 
 MainWindow::~MainWindow()
@@ -375,48 +597,74 @@ void MainWindow::createTabs() {
     tabWidget->addTab(treeGraphicsView, "Дерево (граф)");
 }
 
-// Также исправьте метод updateAllTables - уберите дублирование:
-/*void MainWindow::updateAllTables() {
-    updatePatientTable();
-    updateAppointmentTable();
-    updateHashTableView();
-    updateAVLTreeTableView();
-    updateTreeVisualization();  // Вызываем обновление визуализации
+
+
+void MainWindow::showPolicyTree() {
+    qDebug().noquote() << "[showPolicyTree] Переключение на дерево по ОМС";
+
+    currentTreeType = CurrentTreeType::PolicyTree;
+
+    // Переключаемся на вкладку дерева
+    tabWidget->setCurrentIndex(5);
+
+    // Обновляем дерево
+    updateCurrentTree();
+
+    // Обновляем состояние кнопок
+    showPolicyTreeAction->setEnabled(false);
+    showDateTreeAction->setEnabled(true);
 }
-*/
 
-// АЛЬТЕРНАТИВНО, если хотите добавить это в отдельный метод,
-// создайте новый метод setupTreeVisualization() и вызовите его из конструктора:
+void MainWindow::showDateTree() {
+    qDebug().noquote() << "[showDateTree] Переключение на дерево по датам";
 
-/*void MainWindow::setupTreeVisualization() {
-    // Настройка графического представления дерева
-    treeGraphicsView->setMouseTracking(true);
-    treeGraphicsView->setRenderHint(QPainter::Antialiasing);
-    treeGraphicsView->setDragMode(QGraphicsView::ScrollHandDrag);  // Возможность перетаскивания
-    treeGraphicsView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    treeGraphicsView->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    currentTreeType = CurrentTreeType::DateTree;
 
-    // Устанавливаем размер сцены
-    treeScene->setSceneRect(-500, -100, 1000, 800);
+    // Переключаемся на вкладку дерева
+    tabWidget->setCurrentIndex(5);
 
-    // Цвет фона сцены
-    treeScene->setBackgroundBrush(QBrush(QColor(248, 248, 255))); // Очень светло-голубой фон
+    // Обновляем дерево
+    updateCurrentTree();
+
+    // Обновляем состояние кнопок
+    showPolicyTreeAction->setEnabled(true);
+    showDateTreeAction->setEnabled(false);
 }
-*/
-// Тогда в конструкторе MainWindow добавьте вызов:
-/*MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , ui(new Ui::MainWindow)
-{
-    ui->setupUi(this);
-    setupUI();
-    setupTreeVisualization();  // ДОБАВЬТЕ ЭТУ СТРОКУ
 
-    // Подключаем сигналы
-    connect(loadPatientsAction, &QAction::triggered, this, &MainWindow::loadPatientsFromFile);
-    // ... остальные connections ...
+void MainWindow::updateCurrentTree() {
+    qDebug().noquote() << "[updateCurrentTree] Обновление текущего дерева";
+
+    // Очищаем сцену
+    clearTreeVisualization();
+
+    if (currentTreeType == CurrentTreeType::PolicyTree) {
+        // Дерево по ОМС
+        auto root = avlTree.getRoot();
+        if (root) {
+            drawTreeByPolicy(root);
+            qDebug().noquote() << "→ Основное дерево (ОМС) обновлено";
+        } else {
+            showEmptyTreeMessage("Основное дерево (по ОМС) пустое\nЗагрузите приёмы");
+        }
+    } else {
+        // Дерево по датам - ВСЕГДА перестраиваем перед отображением
+        if (AppointmentArray.Size() > 0) {
+            buildDateTreeForReport();
+            auto root = dateTree.getRoot();
+            if (root) {
+                drawTreeByDate(root);
+                qDebug().noquote() << "→ Дерево дат обновлено";
+            } else {
+                showEmptyTreeMessage("Ошибка построения дерева дат");
+            }
+        } else {
+            showEmptyTreeMessage("Дерево дат пустое\nЗагрузите приёмы для построения дерева");
+        }
+    }
+
+    treeGraphicsView->centerOn(0, 0);
 }
-*/
+
 void MainWindow::createToolBar()
 {
     toolBar = addToolBar("Main Toolbar");
@@ -429,7 +677,23 @@ void MainWindow::createToolBar()
     deleteAppointmentAction = new QAction("Удалить приём", this);
     debugAction = new QAction("Окно отладки", this);
     reportAction = new QAction("Сформировать отчёт", this);
+    searchSplitAction = new QAction("Раздельный поиск", this);
 
+    // Кнопки деревьев
+    showPolicyTreeAction = new QAction("Дерево ОМС", this);
+    showPolicyTreeAction->setToolTip("Показать основное дерево (по полисам ОМС)");
+
+    showDateTreeAction = new QAction("Дерево дат", this);
+    showDateTreeAction->setToolTip("Показать дерево отчетов (по датам приёмов)");
+
+    updateTreeAction = new QAction("Обновить дерево", this);
+    updateTreeAction->setToolTip("Обновить текущее дерево");
+
+    // НОВАЯ КНОПКА: Отладка дерева дат
+    QAction* debugDateTreeAction = new QAction("Отладка дерева дат", this);
+    debugDateTreeAction->setToolTip("Показать структуру узлов дерева дат");
+
+    // Добавляем кнопки
     toolBar->addAction(loadPatientsAction);
     toolBar->addAction(loadAppointmentsAction);
     toolBar->addSeparator();
@@ -441,12 +705,34 @@ void MainWindow::createToolBar()
     toolBar->addSeparator();
     toolBar->addAction(debugAction);
     toolBar->addAction(reportAction);
-    searchSplitAction = new QAction("Раздельный поиск", this);
-    connect(searchSplitAction, &QAction::triggered, this, &MainWindow::showSplitSearchDialog);
     toolBar->addSeparator();
     toolBar->addAction(searchSplitAction);
 
+    // Кнопки деревьев
+    toolBar->addSeparator();
+    toolBar->addAction(showPolicyTreeAction);
+    toolBar->addAction(showDateTreeAction);
+    toolBar->addAction(updateTreeAction);
+    toolBar->addAction(debugDateTreeAction);  // НОВАЯ КНОПКА
+
+    // Подключаем сигналы
+    connect(loadPatientsAction, &QAction::triggered, this, &MainWindow::loadPatientsFromFile);
+    connect(loadAppointmentsAction, &QAction::triggered, this, &MainWindow::loadAppointmentsFromFile);
+    connect(addPatientAction, &QAction::triggered, this, &MainWindow::addPatient);
+    connect(addAppointmentAction, &QAction::triggered, this, &MainWindow::addAppointment);
+    connect(deletePatientAction, &QAction::triggered, this, &MainWindow::deletePatient);
+    connect(deleteAppointmentAction, &QAction::triggered, this, &MainWindow::deleteAppointment);
+    connect(reportAction, &QAction::triggered, this, &MainWindow::generateReport);
+    connect(debugAction, &QAction::triggered, this, &MainWindow::showDebugWindow);
+    connect(searchSplitAction, &QAction::triggered, this, &MainWindow::showSplitSearchDialog);
+
+    // Сигналы деревьев
+    connect(showPolicyTreeAction, &QAction::triggered, this, &MainWindow::showPolicyTree);
+    connect(showDateTreeAction, &QAction::triggered, this, &MainWindow::showDateTree);
+    connect(updateTreeAction, &QAction::triggered, this, &MainWindow::updateCurrentTree);
+    connect(debugDateTreeAction, &QAction::triggered, this, &MainWindow::debugDateTreeNodes);  // НОВЫЙ СИГНАЛ
 }
+
 
 void MainWindow::loadPatientsFromFile() {
     QString filename = QFileDialog::getOpenFileName(this,
@@ -521,7 +807,6 @@ void MainWindow::loadAppointmentsFromFile() {
         Appointment appointment;
 
         if (parseAppointmentLine(line, policy, appointment)) {
-            // ПРОВЕРКА РЕФЕРЕНЦИАЛЬНОЙ ЦЕЛОСТНОСТИ
             if (!patientExists(policy)) {
                 qDebug() << "Строка" << lineNumber << ": Пациент с полисом"
                          << QString::fromStdString(policy) << "не найден. Пропускаем приём.";
@@ -543,7 +828,23 @@ void MainWindow::loadAppointmentsFromFile() {
     }
 
     file.close();
+
+    // ИСПРАВЛЕНИЕ: Сначала обновляем таблицы (БЕЗ дерева)
     updateAllTables();
+
+    // Затем строим дерево дат ОДИН раз
+    if (loaded > 0) {
+        buildDateTreeForReport();
+
+        // Переключаемся на дерево дат
+        currentTreeType = CurrentTreeType::DateTree;
+        showPolicyTreeAction->setEnabled(true);
+        showDateTreeAction->setEnabled(false);
+        tabWidget->setCurrentIndex(5);
+
+        // Обновляем дерево ОДИН раз
+        updateCurrentTree();
+    }
 
     QString message = QString("Загрузка завершена:\n"
                               "Загружено приёмов: %1\n"
@@ -581,29 +882,63 @@ bool MainWindow::parsePatientLine(const QString& line, std::string& policy, Pati
 
 
 bool MainWindow::parseAppointmentLine(const QString& line, std::string& policy, Appointment& appointment) {
-    // Новый формат: полис (4 части), диагноз, врач, день, месяц, год
     QStringList parts = line.split(" ", Qt::SkipEmptyParts);
-    if (parts.size() != 9) return false;
 
-    // Полис
+    // Минимум должно быть 8 частей: 4 (полис) + 1 (диагноз) + 1 (врач) + 1 (день) + 1 (месяц) + 1 (год)
+    if (parts.size() < 8) {
+        qDebug() << "Слишком мало частей в строке:" << parts.size() << "минимум 8";
+        qDebug() << "Строка:" << line;
+        return false;
+    }
+
+    // Полис (первые 4 части)
     QString policyStr = parts[0] + parts[1] + parts[2] + parts[3];
     policy = policyStr.toStdString();
 
-    // Диагноз и тип врача
-    appointment.diagnosis = parts[4].toStdString();
-    appointment.doctorType = parts[5].toStdString();
-
-    // Дата
+    // Дата и месяц всегда в конце
     bool ok;
-    appointment.appointmentDate.day = parts[6].toInt(&ok);
-    if (!ok) return false;
+    QString yearStr = parts.last();        // последний элемент - год
+    QString monthStr = parts[parts.size()-2]; // предпоследний - месяц
+    QString dayStr = parts[parts.size()-3];   // третий с конца - день
 
-    appointment.appointmentDate.month = monthFromShortString(parts[7]);
-    appointment.appointmentDate.year = parts[8].toInt(&ok);
-    if (!ok) return false;
+    int year = yearStr.toInt(&ok);
+    if (!ok) {
+        qDebug() << "Ошибка парсинга года:" << yearStr;
+        return false;
+    }
+
+    int day = dayStr.toInt(&ok);
+    if (!ok) {
+        qDebug() << "Ошибка парсинга дня:" << dayStr;
+        return false;
+    }
+
+    Month month = monthFromShortString(monthStr);
+
+    // Врач - четвертый элемент с конца
+    QString doctorStr = parts[parts.size()-4];
+
+    // Диагноз - все что между полисом и врачом
+    QStringList diagnosisParts;
+    for (int i = 4; i < parts.size() - 4; ++i) {
+        diagnosisParts << parts[i];
+    }
+    QString diagnosisStr = diagnosisParts.join(" "); // Объединяем обратно пробелами
+
+    // Заполняем структуру
+    appointment.doctorType = doctorStr.toStdString();
+    appointment.diagnosis = diagnosisStr.toStdString();
+    appointment.appointmentDate = {day, month, year};
+
+    qDebug() << "Парсинг успешен:"
+             << "полис=" << QString::fromStdString(policy)
+             << "диагноз=" << diagnosisStr
+             << "врач=" << doctorStr
+             << "дата=" << day << monthStr << year;
 
     return true;
 }
+
 
 
 void MainWindow::updatePatientTable() {
@@ -702,16 +1037,16 @@ void MainWindow::updateTreeView() {
 }
 
 void MainWindow::updateAllTables() {
-    updatePatientTable();
-    updateAppointmentTable();
-    updateHashTableView();
-    updateTreeView();
-    updateAVLTreeTableView();
+    qDebug().noquote() << "[updateAllTables] Начинаем обновление всех таблиц";
+
     updatePatientTable();
     updateAppointmentTable();
     updateHashTableView();
     updateAVLTreeTableView();
-    updateTreeVisualization();
+
+    // ИСПРАВЛЕНИЕ: НЕ вызываем updateCurrentTree здесь!
+    // Это должно вызываться только явно, чтобы избежать дублирования
+    qDebug().noquote() << "[updateAllTables] Таблицы обновлены (без дерева)";
 }
 
 void MainWindow::addPatient() {
@@ -859,7 +1194,27 @@ void MainWindow::addAppointment() {
     } else {
         QMessageBox::warning(this, "Ошибка", "Не удалось добавить приём!");
     }
+
+    if (avlTree.insert(policy, appointment, AppointmentArray)) {
+        appointmentPolicies.push_back(policy);
+
+        // ИСПРАВЛЕНИЕ: Сначала таблицы (БЕЗ дерева)
+        updateAllTables();
+
+        // Затем дерево дат ОДИН раз
+        buildDateTreeForReport();
+
+        // Обновляем только текущее дерево ОДИН раз
+        updateCurrentTree();
+
+        QMessageBox::information(this, "Успех",
+                                 QString("Приём для пациента с полисом %1 добавлен!")
+                                     .arg(QString::fromStdString(policy)));
+    } else {
+        QMessageBox::warning(this, "Ошибка", "Не удалось добавить приём!");
+    }
 }
+
 
 void MainWindow::deletePatient() {
     bool ok;
@@ -943,18 +1298,280 @@ void MainWindow::deleteAppointment() {
 
     // Удаляем приём из дерева
     if (avlTree.remove(policy, appointment, AppointmentArray)) {
-        // Также удаляем из вектора appointmentPolicies
-        // Это сложнее, так как нужно найти соответствующий индекс
+        // ИСПРАВЛЕНИЕ: Сначала таблицы (БЕЗ дерева)
         updateAllTables();
+
+        // Затем дерево дат ОДИН раз
+        buildDateTreeForReport();
+
+        // Обновляем только текущее дерево ОДИН раз
+        updateCurrentTree();
+
         QMessageBox::information(this, "Успех", "Приём удалён!");
     } else {
         QMessageBox::warning(this, "Ошибка", "Приём не найден или не удалось удалить!");
     }
 }
 
+void MainWindow::debugDateTreeNodes() {
+    qDebug().noquote() << "\n=== ОТЛАДКА УЗЛОВ ДЕРЕВА ДАТ ===";
+
+    auto root = dateTree.getRoot();
+    if (!root) {
+        qDebug().noquote() << "Дерево дат пустое!";
+        return;
+    }
+
+    std::map<std::string, std::vector<std::size_t>> dateNodes;
+
+    // Собираем все узлы дерева
+    dateTree.traverseIndex([&](std::size_t index, const std::string& dateKey) {
+        dateNodes[dateKey].push_back(index);
+    });
+
+    qDebug().noquote() << QString("Найдено уникальных дат: %1").arg(dateNodes.size());
+
+    for (const auto& [dateKey, indices] : dateNodes) {
+        Date date = stringToDate(dateKey);
+        QString displayDate = QString("%1.%2.%3")
+                                  .arg(date.day, 2, 10, QChar('0'))
+                                  .arg(static_cast<int>(date.month), 2, 10, QChar('0'))
+                                  .arg(date.year);
+
+        qDebug().noquote() << QString("\n📅 ДАТА: %1 (ключ: %2)")
+                                  .arg(displayDate)
+                                  .arg(QString::fromStdString(dateKey));
+        qDebug().noquote() << QString("   Приёмов: %1").arg(indices.size());
+
+        // Показываем детали каждого приёма
+        for (size_t i = 0; i < indices.size() && i < 5; ++i) {
+            std::size_t idx = indices[i];
+            if (idx < AppointmentArray.Size()) {
+                const Appointment& app = AppointmentArray[idx];
+                QString policy = (idx < appointmentPolicies.size()) ?
+                                     QString::fromStdString(appointmentPolicies[idx]) : "НЕТ_ПОЛИСА";
+
+                qDebug().noquote() << QString("   %1. [%2] %3 → %4 (полис: %5)")
+                                          .arg(i + 1)
+                                          .arg(idx)
+                                          .arg(QString::fromStdString(app.doctorType))
+                                          .arg(QString::fromStdString(app.diagnosis))
+                                          .arg(policy);
+            } else {
+                qDebug().noquote() << QString("   %1. [%2] ОШИБКА: индекс вне массива!")
+                                          .arg(i + 1).arg(idx);
+            }
+        }
+
+        if (indices.size() > 5) {
+            qDebug().noquote() << QString("   ... и ещё %1 приёмов").arg(indices.size() - 5);
+        }
+    }
+
+    qDebug().noquote() << "=== КОНЕЦ ОТЛАДКИ УЗЛОВ ===\n";
+}
+
+
+void MainWindow::saveFullReportToFile(const QString& filePath, const std::vector<FullReportRecord>& reportData) {
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, "Ошибка", "Не удалось сохранить файл отчёта.");
+        return;
+    }
+
+    QTextStream out(&file);
+
+    out << "=== ПОЛНЫЙ ОТЧЁТ О ПРИЁМАХ ПАЦИЕНТОВ ===\n\n";
+    out << "Дата формирования: " << QDateTime::currentDateTime().toString("dd.MM.yyyy hh:mm") << "\n";
+    out << "Система: Медицинские справочники с AVL-деревьями\n\n";
+
+    out << "ПАРАМЕТРЫ ОТЧЕТА:\n";
+    out << "ФИО пациента: " << (fioFilterEdit->text().isEmpty() ? "Все" : fioFilterEdit->text()) << "\n";
+    out << "Тип врача: " << (doctorFilterEdit->text().isEmpty() ? "Все" : doctorFilterEdit->text()) << "\n";
+    out << "Дата приёма: " << dateFilterEdit->date().toString("dd.MM.yyyy") << "\n\n";
+
+    out << QString("РЕЗУЛЬТАТ: %1 записей\n").arg(reportData.size());
+    out << QString("=").repeated(120) << "\n\n";
+
+    // Заголовки
+    out << QString("%-12s %-15s %-20s %-18s %-15s %-12s %-15s %-12s %-8s %s\n")
+               .arg("Дата приёма")
+               .arg("Врач")
+               .arg("Диагноз")
+               .arg("Полис ОМС")
+               .arg("Фамилия")
+               .arg("Имя")
+               .arg("Отчество")
+               .arg("Дата рожд.")
+               .arg("Индекс")
+               .arg("Статус");
+
+    out << QString("-").repeated(120) << "\n";
+
+    // Данные
+    for (const auto& record : reportData) {
+        out << QString("%-12s %-15s %-20s %-18s %-15s %-12s %-15s %-12s %-8d %s\n")
+        .arg(formatDate(record.appointmentDate))
+            .arg(QString::fromStdString(record.doctorType))
+            .arg(QString::fromStdString(record.diagnosis))
+            .arg(QString::fromStdString(record.patientPolicy))
+            .arg(QString::fromStdString(record.patientSurname))
+            .arg(QString::fromStdString(record.patientName))
+            .arg(QString::fromStdString(record.patientMiddlename))
+            .arg(formatDate(record.patientBirthDate))
+            .arg(record.appointmentIndex)
+            .arg(record.patientFound ? "ОК" : "НЕ НАЙДЕН");
+    }
+
+    out << "\n" << QString("=").repeated(120) << "\n";
+    out << "Конец отчета\n";
+
+    file.close();
+    QMessageBox::information(this, "Отчёт сохранён",
+                             QString("Полный отчёт сохранён в файл:\n%1\n\nЗаписей: %2")
+                                 .arg(filePath)
+                                 .arg(reportData.size()));
+}
+
+// ===================================================================
+// ВИЗУАЛИЗАЦИЯ ВТОРОГО ДЕРЕВА (по датам):
+
+void MainWindow::updateTreeVisualization() {
+    qDebug().noquote() << "[updateTreeVisualization] Автоматическое обновление";
+
+    // Просто обновляем текущее дерево без лишних проверок
+    updateCurrentTree();
+}
+
+void MainWindow::showDateTreeForDebugging() {
+    qDebug().noquote() << "[showDateTreeForDebugging] Автоматическое отображение дерева дат";
+
+    currentTreeType = CurrentTreeType::DateTree;
+
+    // Переключаемся на вкладку дерева автоматически
+    tabWidget->setCurrentIndex(5);
+
+    // Обновляем дерево
+    updateCurrentTree();
+
+    // Обновляем состояние кнопок
+    showPolicyTreeAction->setEnabled(true);
+    showDateTreeAction->setEnabled(false);
+}
+
+void MainWindow::drawTreeByPolicy(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* root) {
+    if (!root) return;
+
+    int treeHeight = calculateTreeHeight(root);
+    int treeWidth = calculateTreeWidth(root);
+
+    int sceneWidth = std::max(800, treeWidth * 120);
+    int sceneHeight = std::max(600, treeHeight * 100);
+    treeScene->setSceneRect(-sceneWidth/2, -50, sceneWidth, sceneHeight);
+
+    drawNode(root, 0, 80, sceneWidth * 0.3, 1);
+}
+
+Date MainWindow::stringToDate(const std::string& dateStr) {
+    if (dateStr.length() != 8) {
+        return {1, Month::янв, 2000}; // Значение по умолчанию
+    }
+
+    int year = std::stoi(dateStr.substr(0, 4));
+    int month = std::stoi(dateStr.substr(4, 2));
+    int day = std::stoi(dateStr.substr(6, 2));
+
+    return {day, static_cast<Month>(month), year};
+}
+void MainWindow::drawTreeByDate(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* root) {
+    if (!root) return;
+
+    int treeHeight = calculateTreeHeight(root);
+    int treeWidth = calculateTreeWidth(root);
+
+    int sceneWidth = std::max(800, treeWidth * 120);
+    int sceneHeight = std::max(600, treeHeight * 100);
+    treeScene->setSceneRect(-sceneWidth/2, -50, sceneWidth, sceneHeight);
+
+    drawDateNode(root, 0, 80, sceneWidth * 0.3, 1);
+}
+
+void MainWindow::drawDateNode(AVLNode<std::string, Appointment, Array<Appointment, 1000>>* node,
+                              qreal x, qreal y, qreal horizontalSpacing, int level) {
+    if (!node) return;
+
+    // Собираем индексы из связанного списка
+    std::vector<std::size_t> indices;
+    lNode* current = node->indexList.getHead();
+    if (current) {
+        do {
+            indices.push_back(current->arrayIndex);
+            current = current->next;
+        } while (current != node->indexList.getHead());
+    }
+
+    // Форматируем дату для отображения
+    Date date = stringToDate(node->key);
+    QString displayDate = QString("%1.%2.%3")
+                              .arg(date.day, 2, 10, QChar('0'))
+                              .arg(static_cast<int>(date.month), 2, 10, QChar('0'))
+                              .arg(date.year);
+
+    // ИСПРАВЛЕНИЕ: Конвертируем std::string в QString
+    QString dateKey = QString::fromStdString(node->key);
+
+    // Создаем узел для дерева дат
+    DateTreeNodeItem* nodeItem = new DateTreeNodeItem(displayDate, dateKey, indices, &hashTable, x, y);
+    treeScene->addItem(nodeItem);
+
+    // ИСПРАВЛЕНИЕ: Добавляем как QGraphicsItem*, а не в вектор treeNodes
+    // treeNodes.push_back(nodeItem);  // ← ЗАКОММЕНТИРУЙТЕ ЭТУ СТРОКУ
+
+    // Рисуем связи с дочерними узлами
+    qreal childSpacing = horizontalSpacing / 2;
+    qreal childY = y + 100;
+
+    if (node->left) {
+        qreal leftX = x - horizontalSpacing;
+        QGraphicsLineItem* leftLine = treeScene->addLine(x, y + 20, leftX, childY - 20,
+                                                         QPen(QColor(100, 100, 100), 2));
+        drawDateNode(node->left, leftX, childY, childSpacing, level + 1);
+    }
+
+    if (node->right) {
+        qreal rightX = x + horizontalSpacing;
+        QGraphicsLineItem* rightLine = treeScene->addLine(x, y + 20, rightX, childY - 20,
+                                                          QPen(QColor(100, 100, 100), 2));
+        drawDateNode(node->right, rightX, childY, childSpacing, level + 1);
+    }
+}
+
+void MainWindow::showEmptyTreeMessage(const QString& message) {
+    QGraphicsTextItem* emptyText = treeScene->addText(message, QFont("Arial", 16));
+    emptyText->setPos(-150, -20);
+    emptyText->setDefaultTextColor(QColor(128, 128, 128));
+}
+
 void MainWindow::generateReport() {
+    qDebug().noquote() << "=== ФОРМИРОВАНИЕ ПОЛНОГО ОТЧЕТА ===";
+
     reportTable->clearContents();
     reportTable->setRowCount(0);
+
+    // Расширенная структура таблицы отчета - ВСЕ ПОЛЯ из обоих справочников
+    reportTable->setColumnCount(10);
+    reportTable->setHorizontalHeaderLabels({
+        "Дата приёма",           // Справочник 2
+        "Врач",                  // Справочник 2
+        "Диагноз",              // Справочник 2
+        "Полис ОМС",            // Связь
+        "Фамилия",              // Справочник 1
+        "Имя",                  // Справочник 1
+        "Отчество",             // Справочник 1
+        "Дата рождения",        // Справочник 1
+        "Индекс приёма",        // Техническое поле
+        "Статус пациента"       // Для отладки
+    });
 
     // Получаем значения фильтров
     QString fioText = fioFilterEdit->text().trimmed();
@@ -963,103 +1580,86 @@ void MainWindow::generateReport() {
 
     std::string fioFilter = fioText.toStdString();
     std::string doctorFilter = doctorText.toStdString();
-    Date dateFilter = {qdate.day(), static_cast<Month>(qdate.month()), qdate.year()};
+    Date filterDate = {qdate.day(), static_cast<Month>(qdate.month()), qdate.year()};
 
-    // 🔴 ПРОВЕРКА: все три поля должны быть заполнены
-    if (fioFilter.empty() || doctorFilter.empty()) {
-        QMessageBox::warning(this, "Недостаточно данных",
-                             "Пожалуйста, заполните все три поля фильтрации:\nФИО, врач и дата.");
-        return;
-    }
+    qDebug().noquote() << QString("Фильтры: ФИО='%1', Врач='%2', Дата=%3.%4.%5")
+                              .arg(fioText)
+                              .arg(doctorText)
+                              .arg(filterDate.day)
+                              .arg(static_cast<int>(filterDate.month))
+                              .arg(filterDate.year);
 
-    // 🔍 Поиск по дереву
-    avlTree.traverseFiltered(
-        [&](const Appointment& app) {
-            if (app.doctorType != doctorFilter)
-                return false;
+    // Строим дерево отчетов по дате
+    buildDateTreeForReport();
 
-            if (!(app.appointmentDate == dateFilter))
-                return false;
+    // Получаем полные данные с применением фильтров
+    std::vector<FullReportRecord> reportData = generateFullReportData(fioFilter, doctorFilter, filterDate);
 
-            return true;
-        },
-        [&](const Appointment& app) {
-            for (std::size_t i = 0; i < AppointmentArray.Size(); ++i) {
-                if (AppointmentArray[i] == app) {
-                    std::string policy = appointmentPolicies[i];
+    qDebug().noquote() << QString("Получено записей для отчета: %1").arg(reportData.size());
 
-                    const Patient* patient = hashTable.get(policy);
-                    if (!patient) return;
+    // Заполняем таблицу
+    for (const auto& record : reportData) {
+        int row = reportTable->rowCount();
+        reportTable->insertRow(row);
 
-                    std::string fioActual = patient->surname + " " + patient->name + " " + patient->middlename;
-                    if (fioActual != fioFilter)
-                        return;
+        // Заполняем все колонки полными данными
+        reportTable->setItem(row, 0, new QTableWidgetItem(formatDate(record.appointmentDate)));
+        reportTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(record.doctorType)));
+        reportTable->setItem(row, 2, new QTableWidgetItem(QString::fromStdString(record.diagnosis)));
+        reportTable->setItem(row, 3, new QTableWidgetItem(QString::fromStdString(record.patientPolicy)));
+        reportTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(record.patientSurname)));
+        reportTable->setItem(row, 5, new QTableWidgetItem(QString::fromStdString(record.patientName)));
+        reportTable->setItem(row, 6, new QTableWidgetItem(QString::fromStdString(record.patientMiddlename)));
+        reportTable->setItem(row, 7, new QTableWidgetItem(formatDate(record.patientBirthDate)));
+        reportTable->setItem(row, 8, new QTableWidgetItem(QString::number(record.appointmentIndex)));
+        reportTable->setItem(row, 9, new QTableWidgetItem(record.patientFound ? "ОК" : "НЕ НАЙДЕН"));
 
-                    int row = reportTable->rowCount();
-                    reportTable->insertRow(row);
-
-                    reportTable->setItem(row, 0, new QTableWidgetItem(QString::fromStdString(policy)));
-                    reportTable->setItem(row, 1, new QTableWidgetItem(QString::fromStdString(app.doctorType)));
-                    reportTable->setItem(row, 2, new QTableWidgetItem(QString::fromStdString(app.diagnosis)));
-                    reportTable->setItem(row, 3, new QTableWidgetItem(formatDate(app.appointmentDate)));
-                    reportTable->setItem(row, 4, new QTableWidgetItem(QString::fromStdString(fioActual)));
-                    break;
-                }
-            }
-        },
-        AppointmentArray);
-
-    if (reportTable->columnCount() != 5) {
-        reportTable->setColumnCount(5);
-        reportTable->setHorizontalHeaderLabels({
-            "Полис ОМС", "Врач", "Диагноз", "Дата приёма", "ФИО пациента"
-        });
-    }
-
-    tabWidget->setCurrentIndex(2);
-
-    // 🔽 СПРОСИМ, ХОЧЕТ ЛИ ПОЛЬЗОВАТЕЛЬ СОХРАНИТЬ ОТЧЁТ
-    QString savePath = QFileDialog::getSaveFileName(this,
-                                                    "Сохранить отчёт в файл", "", "Текстовые файлы (*.txt)");
-
-    if (!savePath.isEmpty()) {
-        QFile file(savePath);
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream out(&file);
-            // ⚠️ НЕ вызывай setCodec — в Qt6 это удалено
-
-            out << "=== ОТЧЁТ О ПРИЁМАХ ПАЦИЕНТОВ ===\n\n";
-            out << "Фильтры: \n";
-            out << "ФИО: " << fioText << "\n";
-            out << "Врач: " << doctorText << "\n";
-            out << "Дата: " << qdate.toString("dd.MM.yyyy") << "\n\n";
-
-            out << "Найдено записей: " << reportTable->rowCount() << "\n\n";
-
-            // Заголовки
+        // Подсветка строк где пациент не найден
+        if (!record.patientFound) {
             for (int col = 0; col < reportTable->columnCount(); ++col) {
-                out << reportTable->horizontalHeaderItem(col)->text() << "\t";
+                reportTable->item(row, col)->setBackground(QColor(255, 200, 200)); // Светло-красный
             }
-            out << "\n";
-
-            // Данные
-            for (int row = 0; row < reportTable->rowCount(); ++row) {
-                for (int col = 0; col < reportTable->columnCount(); ++col) {
-                    QTableWidgetItem* item = reportTable->item(row, col);
-                    out << (item ? item->text() : "") << "\t";
-                }
-                out << "\n";
-            }
-
-            file.close();
-            QMessageBox::information(this, "Отчёт сохранён",
-                                     "Отчёт успешно сохранён в файл:\n" + savePath);
-        } else {
-            QMessageBox::warning(this, "Ошибка",
-                                 "Не удалось сохранить файл отчёта.");
         }
     }
 
+    // Переключаемся на вкладку отчета
+    tabWidget->setCurrentIndex(2);
+
+    // Результат
+    QString message;
+    if (reportData.empty()) {
+        message = "По заданным фильтрам записи не найдены.\n\n"
+                  "Проверьте:\n"
+                  "- Правильность написания ФИО (точное совпадение)\n"
+                  "- Правильность типа врача\n"
+                  "- Наличие приёмов на выбранную дату";
+        QMessageBox::information(this, "Результат поиска", message);
+    } else {
+        int validRecords = 0;
+        int invalidRecords = 0;
+        for (const auto& record : reportData) {
+            if (record.patientFound) validRecords++;
+            else invalidRecords++;
+        }
+
+        message = QString("Сформирован отчет:\n"
+                          "Всего записей: %1\n"
+                          "Корректных: %2\n"
+                          "С проблемами: %3")
+                      .arg(reportData.size())
+                      .arg(validRecords)
+                      .arg(invalidRecords);
+
+        QMessageBox::information(this, "Отчет готов", message);
+
+        // Предлагаем сохранить отчет
+        QString savePath = QFileDialog::getSaveFileName(this,
+                                                        "Сохранить отчёт в файл", "", "Текстовые файлы (*.txt)");
+
+        if (!savePath.isEmpty()) {
+            saveFullReportToFile(savePath, reportData);
+        }
+    }
 }
 
 void MainWindow::showSplitSearchDialog() {
@@ -1518,20 +2118,15 @@ void MainWindow::deleteAllAppointmentsForPatient(const std::string& policy) {
                 ++it;
             }
         }
+
+        // ИСПРАВЛЕНИЕ: Перестраиваем дерево дат после удаления
+        buildDateTreeForReport();
     } else {
         qDebug().noquote() << "→ Приёмы с данным полисом не найдены";
     }
 }
 
 
-void MainWindow::updateTreeVisualization()
-{
-    qDebug().noquote() << "[updateTreeVisualization] Начинаем обновление визуализации дерева";
-    clearTreeVisualization();
-    drawTree();
-    treeGraphicsView->centerOn(0, 0); // Центрируем на середине сцены
-
-}
 
 void MainWindow::clearTreeVisualization()
 {
@@ -1630,6 +2225,155 @@ void MainWindow::drawNode(AVLNode<std::string, Appointment, Array<Appointment, 1
     }
 }
 
+std::string MainWindow::dateToString(const Date& date) {
+    return QString("%1%2%3")
+    .arg(date.year, 4, 10, QChar('0'))
+        .arg(static_cast<int>(date.month), 2, 10, QChar('0'))
+        .arg(date.day, 2, 10, QChar('0'))
+        .toStdString();
+}
+
+void MainWindow::buildDateTreeForReport() {
+    qDebug().noquote() << "=== ПОСТРОЕНИЕ ДЕРЕВА ПО ДАТАМ ===";
+
+    // Всегда очищаем дерево перед построением
+    dateTree.clear();
+
+    if (AppointmentArray.Size() == 0) {
+        qDebug().noquote() << "→ Нет приёмов для построения дерева дат";
+        return;
+    }
+
+    int addedCount = 0;
+    std::set<std::string> uniqueDates;  // Для подсчета уникальных дат
+
+    for (std::size_t i = 0; i < AppointmentArray.Size(); ++i) {
+        const Appointment& appointment = AppointmentArray[i];
+        std::string dateKey = dateToString(appointment.appointmentDate);
+
+        uniqueDates.insert(dateKey);
+
+        if (dateTree.insertIndex(dateKey, i)) {
+            addedCount++;
+            qDebug().noquote() << QString("→ [%1] %2: %3 у %4")
+                                      .arg(i)
+                                      .arg(QString::fromStdString(dateKey))
+                                      .arg(QString::fromStdString(appointment.diagnosis))
+                                      .arg(QString::fromStdString(appointment.doctorType));
+        } else {
+            qDebug().noquote() << QString("✗ Ошибка добавления индекса %1 для даты %2")
+                                      .arg(i)
+                                      .arg(QString::fromStdString(dateKey));
+        }
+    }
+
+    qDebug().noquote() << QString("Результат: %1 приёмов добавлено, %2 уникальных дат")
+                              .arg(addedCount)
+                              .arg(uniqueDates.size());
+
+    auto root = dateTree.getRoot();
+    if (root) {
+        qDebug().noquote() << "✓ Корень дерева дат создан";
+    } else {
+        qDebug().noquote() << "✗ КРИТИЧЕСКАЯ ОШИБКА: Корень дерева дат НЕ создан!";
+    }
+}
+
+std::vector<MainWindow::FullReportRecord> MainWindow::generateFullReportData(
+    const std::string& fioFilter,
+    const std::string& doctorFilter,
+    const Date& dateFilter) {
+
+    std::vector<FullReportRecord> results;
+    std::string dateKey = dateToString(dateFilter);
+
+    qDebug().noquote() << QString("Поиск в дереве отчетов по дате: %1")
+                              .arg(QString::fromStdString(dateKey));
+
+    // Поиск по дереву дат
+    dateTree.traverseFiltered(
+        [&](const Appointment& appointment) -> bool {
+            // Фильтр по дате (должен совпадать с ключом)
+            if (dateToString(appointment.appointmentDate) != dateKey) {
+                return false;
+            }
+
+            // Фильтр по врачу
+            if (!doctorFilter.empty() && appointment.doctorType != doctorFilter) {
+                return false;
+            }
+
+            return true; // Пока что пропускаем, ФИО проверим отдельно
+        },
+        [&](const Appointment& appointment) {
+            // Находим индекс приёма в массиве
+            std::size_t appointmentIndex = SIZE_MAX;
+            for (std::size_t i = 0; i < AppointmentArray.Size(); ++i) {
+                if (AppointmentArray[i] == appointment) {
+                    appointmentIndex = i;
+                    break;
+                }
+            }
+
+            if (appointmentIndex == SIZE_MAX || appointmentIndex >= appointmentPolicies.size()) {
+                qDebug().noquote() << "Не найден индекс для приёма";
+                return;
+            }
+
+            // Получаем полис для этого приёма
+            std::string policy = appointmentPolicies[appointmentIndex];
+
+            // Получаем данные пациента из справочника 1
+            const Patient* patient = hashTable.get(policy);
+
+            FullReportRecord record;
+            record.appointmentIndex = appointmentIndex;
+            record.doctorType = appointment.doctorType;
+            record.diagnosis = appointment.diagnosis;
+            record.appointmentDate = appointment.appointmentDate;
+            record.patientPolicy = policy;
+
+            if (patient) {
+                record.patientSurname = patient->surname;
+                record.patientName = patient->name;
+                record.patientMiddlename = patient->middlename;
+                record.patientBirthDate = patient->birthDate;
+                record.patientFound = true;
+
+                // Применяем фильтр по ФИО если указан
+                if (!fioFilter.empty()) {
+                    std::string fullFIO = patient->surname + " " + patient->name + " " + patient->middlename;
+                    if (fullFIO != fioFilter) {
+                        return; // Не подходит по ФИО
+                    }
+                }
+            } else {
+                record.patientSurname = "НЕ";
+                record.patientName = "НАЙДЕН";
+                record.patientMiddlename = "";
+                record.patientBirthDate = {1, Month::янв, 1900};
+                record.patientFound = false;
+
+                // Если фильтр по ФИО задан, а пациент не найден - пропускаем
+                if (!fioFilter.empty()) {
+                    return;
+                }
+            }
+
+            results.push_back(record);
+
+            qDebug().noquote() << QString("✓ Добавлен: %1 %2 %3 → %4 у %5")
+                                      .arg(QString::fromStdString(record.patientSurname))
+                                      .arg(QString::fromStdString(record.patientName))
+                                      .arg(QString::fromStdString(record.patientMiddlename))
+                                      .arg(QString::fromStdString(record.diagnosis))
+                                      .arg(QString::fromStdString(record.doctorType));
+        },
+        AppointmentArray
+        );
+
+    return results;
+}
 
 void MainWindow::showIntegrityReport() {
     generateIntegrityReport();
